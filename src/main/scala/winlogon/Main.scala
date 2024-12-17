@@ -2,15 +2,19 @@ import sttp.client3._
 import org.jsoup.Jsoup
 import org.jsoup.nodes.{Document, Element}
 import com.typesafe.scalalogging.LazyLogging
-import java.net.URLEncoder
-import scala.util.Try
+import scala.util.{Try, boundary}
+import scala.util.control.Breaks._
 import scala.jdk.CollectionConverters._
+import java.net.URLEncoder
+import java.nio.file.{Files, Paths}
+import io.circe._
+import io.circe.generic.auto._
+import io.circe.{parser => jsonParser}
+import io.circe.yaml.{parser => yamlParser}
+
+import java.nio.file.StandardOpenOption._
 
 object Main extends LazyLogging {
-
-  val MaxPages = 10
-  val ValidWebsites = List("reddit.com", "stackoverflow.com", "stackexchange.com", "medium.com")
-
   def searchDuckDuckGoLite(query: String, offset: Int): Option[String] = {
     val url = "https://lite.duckduckgo.com/lite/"
     val encodedQuery = URLEncoder.encode(query.replace(" ", "+"), "UTF-8")
@@ -49,7 +53,7 @@ object Main extends LazyLogging {
       val title = link.text()
       if (validWebsites.exists(href.contains)) Some(title -> href) else None
     }
-    
+
     logger.info(s"Found ${results.size} valid results")
     results
   }
@@ -61,35 +65,41 @@ object Main extends LazyLogging {
   }
 
   def main(args: Array[String]): Unit = {
-    var searchTerm: String = ""
+    val logger = new ConsoleLogger()
+    val configLoader = ConfigLoader()
+    val config = configLoader.load()
 
-    if (args.length != 1) {
-      println("Search query: ")
+    var searchTerm: String = ""
+    if (args.isEmpty) {
+      println("Enter your search query:")
       searchTerm = scala.io.StdIn.readLine()
     } else {
-      searchTerm = args(0)
+      searchTerm = args.mkString(" ")
     }
+
+    val validWebsites = config.validWebsites
+    val maxPages = config.maxPages
 
     var allResults = List.empty[(String, String)]
 
-    for (page <- 0 until MaxPages) {
-      val offset = page * MaxPages
+    for (page <- 0 until maxPages) {
+      val offset = page * maxPages
       logger.info(s"Starting search for page ${page + 1} with offset $offset")
       val htmlOpt = searchDuckDuckGoLite(searchTerm, offset)
 
       htmlOpt match {
         case Some(html) =>
-          val results = parseResults(html, ValidWebsites)
+          val results = parseResults(html, validWebsites)
           if (results.nonEmpty) {
             allResults = allResults ++ results
           } else {
             logger.info(s"No results found on page ${page + 1}")
-            // Break if no results are found on the current page
-            return
+            break()
           }
+          displayResults(results)
         case None =>
           logger.error("Failed to retrieve HTML; stopping search")
-          return
+          break()
       }
     }
 
