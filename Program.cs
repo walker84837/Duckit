@@ -20,6 +20,7 @@ public class Result
 class Program
 {
     private const string ddgHTMLURL = "https://duckduckgo.com/html/";
+    private const int maxDescriptionLength = 20;
 
     static async Task Main(string[] args)
     {
@@ -91,13 +92,20 @@ class Program
         var doc = new HtmlDocument();
         doc.Load(htmlStream);
 
-        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'result__body')]");
+        // every result from the page
+        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main links_deep result__body')]");
         if (nodes != null)
         {
             foreach (var node in nodes)
             {
                 var result = new Result();
 
+                /*
+                 * TODO: example html structure:
+                 * <h2 class="result__title">
+                 *     <a rel="nofollow" href="https://www.hellomagazine.com/" class="">HELLO! - Daily royal, celebrity, fashion, beauty &amp; lifestyle news</a>
+                 * </h2>
+                 */
                 var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
                 if (h2Node != null)
                 {
@@ -124,6 +132,15 @@ class Program
                         }
                     }
 
+                    /* 
+                     * TODO: example snippet structure:
+                     *
+                     * <a class="result__snippet" href="https://www.hellomagazine.com/">
+                     *     <b>HELLO</b>! brings you the latest celebrity &amp; royal news from the UK &amp; around the world, magazine exclusives, fashion, beauty, lifestyle news, celeb babies, weddings, pregnancies and more!
+                     * </a>
+                     *
+                     * Bold is a the search term used. the bold tags needs to be scrapped to get the full thing, and convert HTML escape codes to actual characters
+                     */
                     var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
                     if (snippetNode != null)
                     {
@@ -163,9 +180,9 @@ class Program
             return snippet;
 
         var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length > 20)
+        if (words.Length > maxDescriptionLength)
         {
-            return string.Join(" ", words.Take(20)) + " ...";
+            return string.Join(" ", words.Take(maxDescriptionLength)) + " ...";
         }
 
         return snippet;
@@ -184,6 +201,7 @@ class Program
         // Limit results to maximum specified.
         if (maxResults > results.Count)
         {
+            Console.WriteLine("Maximum number of results exceeded. Showing all results.");
             maxResults = results.Count;
         }
 
