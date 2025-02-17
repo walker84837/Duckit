@@ -1,4 +1,5 @@
 ﻿using System;
+using System.CommandLine;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -12,9 +13,9 @@ namespace Browser;
 
 public class Result
 {
-    public string Title { get; set; }
-    public string URL { get; set; }
-    public string Snippet { get; set; }
+    public string? Title { get; set; }
+    public string? URL { get; set; }
+    public string? Snippet { get; set; }
 }
 
 class Program
@@ -22,34 +23,44 @@ class Program
     private const string ddgHTMLURL = "https://duckduckgo.com/html/";
     private const int maxDescriptionLength = 20;
 
-    static async Task Main(string[] args)
+    static async Task<int> Main(string[] args)
     {
-        Console.Write("Enter your search query: ");
-        var query = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            Console.WriteLine("No search query entered.");
-            return;
-        }
+        var rootCommand = new RootCommand("Search for things on DuckDuckGo");
+        var searchTermArgument = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
+        var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, "Specify the number of maximum results");
+        // TODO: implement these
+        var configOption = new Option<string>(new[] { "--config", "-c", "-conf" }, "Specify the config file");
+        var useInteractiveMode = new Option<bool>(new[] { "--interactive", "-i", "-int" }, "Enable interactive mode");
 
-        Console.Write("How many results do you want to see? ");
-        var nrInput = Console.ReadLine();
-        if (!int.TryParse(nrInput.Trim(), out int maxResults) || maxResults <= 0)
-        {
-            Console.WriteLine("Invalid number of results. Please enter a valid positive integer.");
-            return;
-        }
+        rootCommand.AddOption(searchTermArgument);
+        rootCommand.AddOption(configOption);
+        rootCommand.AddOption(resultNumberOption);
+        rootCommand.AddOption(useInteractiveMode);
 
-        Console.WriteLine($"Performing search for query: {query}");
-        try
+        rootCommand.SetHandler(async (query, configOption, maxResults, useInteractive) =>
         {
-            var results = await SearchDDG(query);
-            PrintFancyResults(results, maxResults);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error occurred: {ex.Message}");
-        }
+            var config = configOption;
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                Console.WriteLine("No search query entered.");
+                return;
+            }
+
+            Console.WriteLine($"Performing search for query: {query}");
+
+            try
+            {
+                var results = await SearchDDG(query);
+                PrintFancyResults(results, maxResults);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error occurred: {ex.Message}");
+            }
+
+        }, searchTermArgument, configOption, resultNumberOption, useInteractiveMode);
+
+        return await rootCommand.InvokeAsync(args);
     }
 
     // Performs a GET request to DuckDuckGo HTML search for the given query.
@@ -88,10 +99,10 @@ class Program
     private static List<Result> ParseHTML(System.IO.Stream htmlStream)
     {
         var results = new List<Result>();
-    
+
         var doc = new HtmlDocument();
         doc.Load(htmlStream);
-    
+
         // every result from the page
         var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main links_deep result__body')]");
 
@@ -104,7 +115,7 @@ class Program
         foreach (var node in nodes)
         {
             var result = new Result();
-    
+
             // Extract the title from the <h2> tag
             var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
             if (h2Node != null)
@@ -115,7 +126,7 @@ class Program
                     result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
                 }
             }
-    
+
             // Extract the URL from the <a> tag
             var aNodes = node.SelectNodes(".//a");
             if (aNodes != null)
@@ -124,7 +135,7 @@ class Program
                 {
                     result.URL = a.GetAttributeValue("href", "");
                 }
-    
+
                 // Extract the snippet from the <a> tag with class 'result__snippet'
                 var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
                 if (snippetNode != null)
@@ -132,23 +143,23 @@ class Program
                     result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
                 }
             }
-    
+
             if (!string.IsNullOrEmpty(result.URL))
             {
                 results.Add(result);
             }
         }
-        
+
         return results;
     }
 
     /// <summary>
     /// Abbreviates the snippet if it is too long.
     /// </summary>
-    private static string AbbreviateSnippet(string snippet)
+    private static string AbbreviateSnippet(string? snippet)
     {
         if (string.IsNullOrWhiteSpace(snippet))
-            return snippet;
+            return "";
 
         var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > maxDescriptionLength)
