@@ -94,47 +94,51 @@ class Program
     
         // every result from the page
         var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main links_deep result__body')]");
-        if (nodes != null)
+
+        if (nodes == null)
         {
-            foreach (var node in nodes)
+            Console.WriteLine("No results found.");
+            return Enumerable.Empty<Result>().ToList();
+        }
+
+        foreach (var node in nodes)
+        {
+            var result = new Result();
+    
+            // Extract the title from the <h2> tag
+            var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
+            if (h2Node != null)
             {
-                var result = new Result();
-    
-                // Extract the title from the <h2> tag
-                var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
-                if (h2Node != null)
+                var titleLink = h2Node.SelectSingleNode(".//a");
+                if (titleLink != null)
                 {
-                    var titleLink = h2Node.SelectSingleNode(".//a");
-                    if (titleLink != null)
-                    {
-                        result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
-                    }
-                }
-    
-                // Extract the URL from the <a> tag
-                var aNodes = node.SelectNodes(".//a");
-                if (aNodes != null)
-                {
-                    foreach (var a in aNodes)
-                    {
-                        result.URL = a.GetAttributeValue("href", "");
-                    }
-    
-                    // Extract the snippet from the <a> tag with class 'result__snippet'
-                    var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
-                    if (snippetNode != null)
-                    {
-                        result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
-                    }
-                }
-    
-                if (!string.IsNullOrEmpty(result.URL))
-                {
-                    results.Add(result);
+                    result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
                 }
             }
-        }
     
+            // Extract the URL from the <a> tag
+            var aNodes = node.SelectNodes(".//a");
+            if (aNodes != null)
+            {
+                foreach (var a in aNodes)
+                {
+                    result.URL = a.GetAttributeValue("href", "");
+                }
+    
+                // Extract the snippet from the <a> tag with class 'result__snippet'
+                var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
+                if (snippetNode != null)
+                {
+                    result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
+                }
+            }
+    
+            if (!string.IsNullOrEmpty(result.URL))
+            {
+                results.Add(result);
+            }
+        }
+        
         return results;
     }
 
