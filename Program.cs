@@ -24,7 +24,6 @@ class Program
 
     static async Task Main(string[] args)
     {
-        // Ask the user for a search query.
         Console.Write("Enter your search query: ");
         var query = Console.ReadLine();
         if (string.IsNullOrWhiteSpace(query))
@@ -33,7 +32,6 @@ class Program
             return;
         }
 
-        // Ask the user how many results they want to see.
         Console.Write("How many results do you want to see? ");
         var nrInput = Console.ReadLine();
         if (!int.TryParse(nrInput.Trim(), out int maxResults) || maxResults <= 0)
@@ -84,14 +82,16 @@ class Program
         }
     }
 
-    // Parse the HTML content to extract search results.
+    /// <summary>
+    /// Parse the HTML content to extract search results.
+    /// </summary>
     private static List<Result> ParseHTML(System.IO.Stream htmlStream)
     {
         var results = new List<Result>();
-
+    
         var doc = new HtmlDocument();
         doc.Load(htmlStream);
-
+    
         // every result from the page
         var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main links_deep result__body')]");
         if (nodes != null)
@@ -99,81 +99,48 @@ class Program
             foreach (var node in nodes)
             {
                 var result = new Result();
-
-                /*
-                 * TODO: example html structure:
-                 * <h2 class="result__title">
-                 *     <a rel="nofollow" href="https://www.hellomagazine.com/" class="">HELLO! - Daily royal, celebrity, fashion, beauty &amp; lifestyle news</a>
-                 * </h2>
-                 */
+    
+                // Extract the title from the <h2> tag
                 var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
                 if (h2Node != null)
                 {
-                    result.Title = WebUtility.HtmlDecode(h2Node.InnerText.Trim());
+                    var titleLink = h2Node.SelectSingleNode(".//a");
+                    if (titleLink != null)
+                    {
+                        result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
+                    }
                 }
-
+    
+                // Extract the URL from the <a> tag
                 var aNodes = node.SelectNodes(".//a");
                 if (aNodes != null)
                 {
                     foreach (var a in aNodes)
                     {
-                        var hrefValue = a.GetAttributeValue("href", "");
-                        if (hrefValue.StartsWith("//duckduckgo.com/l/?uddg="))
-                        {
-                            try
-                            {
-                                result.URL = ExtractFinalURL(hrefValue);
-                                break;
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Error extracting final URL: {ex.Message}");
-                            }
-                        }
+                        result.URL = a.GetAttributeValue("href", "");
                     }
-
-                    /* 
-                     * TODO: example snippet structure:
-                     *
-                     * <a class="result__snippet" href="https://www.hellomagazine.com/">
-                     *     <b>HELLO</b>! brings you the latest celebrity &amp; royal news from the UK &amp; around the world, magazine exclusives, fashion, beauty, lifestyle news, celeb babies, weddings, pregnancies and more!
-                     * </a>
-                     *
-                     * Bold is a the search term used. the bold tags needs to be scrapped to get the full thing, and convert HTML escape codes to actual characters
-                     */
+    
+                    // Extract the snippet from the <a> tag with class 'result__snippet'
                     var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
                     if (snippetNode != null)
                     {
                         result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
                     }
                 }
-
+    
                 if (!string.IsNullOrEmpty(result.URL))
                 {
                     results.Add(result);
                 }
             }
         }
-
+    
         return results;
     }
 
-    private static string ExtractFinalURL(string redirectURL)
-    {
-        var urlWithScheme = "https:" + redirectURL;
-        var uri = new Uri(urlWithScheme);
-        var queryParams = HttpUtility.ParseQueryString(uri.Query);
-        var uddg = queryParams.Get("uddg");
-
-        if (string.IsNullOrEmpty(uddg))
-        {
-            throw new Exception("No uddg parameter found in redirect URL");
-        }
-
-        var finalUrl = HttpUtility.UrlDecode(uddg);
-        return finalUrl;
-    }
-
+    /// <summary>
+    /// Abbreviates the snippet if it is too long.
+    /// </summary>
     private static string AbbreviateSnippet(string snippet)
     {
         if (string.IsNullOrWhiteSpace(snippet))
@@ -182,16 +149,17 @@ class Program
         var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > maxDescriptionLength)
         {
-            return string.Join(" ", words.Take(maxDescriptionLength)) + " ...";
+            return string.Join(" ", words.Take(maxDescriptionLength)) + "...";
         }
 
         return snippet;
     }
 
-    // Prints the results in a formatted manner.
+    /// <summary>
+    /// Prints the results in a formatted manner.
+    /// </summary>
     private static void PrintFancyResults(List<Result> results, int maxResults)
     {
-        // ANSI escape codes for colors.
         string greenBold = "\u001b[1;32m";
         string cyanBold = "\u001b[1;36m";
         string reset = "\u001b[0m";
