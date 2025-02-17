@@ -7,7 +7,10 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
+using System.IO;
 using HtmlAgilityPack;
+using Serilog;
+using Kadlet;
 
 namespace Browser;
 
@@ -18,55 +21,221 @@ public class Result
     public string? Snippet { get; set; }
 }
 
+// Configuration object reflecting our KDL config options.
+public class BrowserConfig
+{
+    public List<string> Sites { get; set; } = new List<string>();
+    public bool Repl { get; set; } = false;
+    public string SearchEngine { get; set; } = "duckduckgo";
+    public List<string> Subtopics { get; set; } = new List<string>();
+}
+
 class Program
 {
     private const string ddgHTMLURL = "https://duckduckgo.com/html/";
+    private const string browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.3";
     private const int maxDescriptionLength = 20;
+
 
     static async Task<int> Main(string[] args)
     {
-        var rootCommand = new RootCommand("Search for things on DuckDuckGo");
-        var searchTermArgument = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
-        var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, "Specify the number of maximum results");
-        // TODO: implement these
-        var configOption = new Option<string>(new[] { "--config", "-c", "-conf" }, "Specify the config file");
-        var useInteractiveMode = new Option<bool>(new[] { "--interactive", "-i", "-int" }, "Enable interactive mode");
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .CreateLogger();
+        // Define command-line options.
 
-        rootCommand.AddOption(searchTermArgument);
+        var rootCommand = new RootCommand("Search for things on DuckDuckGo");
+        var searchTermOption = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
+        var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, () => 10, "Maximum number of results");
+
+        // Command-line subtopic option (can override config subtopics)
+        var subtopicOption = new Option<string[]>(new[] { "--subtopic", "-s", "-sub" }, "Subtopics to refine the search");
+        var configOption = new Option<string>(new[] { "--config", "-c", "-conf" }, "Path to the config file");
+        var interactiveOption = new Option<bool>(new[] { "--interactive", "-i", "-int" }, "Enable interactive mode");
+
+        rootCommand.AddOption(searchTermOption);
         rootCommand.AddOption(configOption);
         rootCommand.AddOption(resultNumberOption);
-        rootCommand.AddOption(useInteractiveMode);
+        rootCommand.AddOption(interactiveOption);
+        rootCommand.AddOption(subtopicOption);
 
-        rootCommand.SetHandler(async (query, configOption, maxResults, useInteractive) =>
+        // Initialize a default config.
+        BrowserConfig config = new BrowserConfig();
+
+        rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive) =>
         {
-            var config = configOption;
-            if (string.IsNullOrWhiteSpace(query))
+            // If a config file is provided, load and parse it.
+            if (!string.IsNullOrWhiteSpace(configPath))
             {
-                Console.WriteLine("No search query entered.");
-                return;
+                try
+                {
+                    config = LoadConfig(configPath);
+                    Log.Information("Configuration loaded successfully.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Failed to load config: {ex.Message}");
+                }
             }
 
-            Console.WriteLine($"Performing search for query: {query}");
-
-            try
+            // Enable interactive mode if set in config or via command-line.
+            if (config.Repl || interactive)
             {
-                var results = await SearchDDG(query);
-                PrintFancyResults(results, maxResults);
+                await RunInteractiveMode(config, maxResults, query, cliSubtopics);
             }
-            catch (Exception ex)
+            else
             {
-                Console.WriteLine($"Error occurred: {ex.Message}");
+                if (string.IsNullOrWhiteSpace(query))
+                {
+                    Log.Warning("No search query entered.");
+                    return;
+                }
+                await ProcessQuery(query, config, maxResults, cliSubtopics);
             }
-
-        }, searchTermArgument, configOption, resultNumberOption, useInteractiveMode);
+        },
+        searchTermOption, configOption, resultNumberOption, subtopicOption, interactiveOption);
 
         return await rootCommand.InvokeAsync(args);
     }
 
-    // Performs a GET request to DuckDuckGo HTML search for the given query.
+    // REPL loop: repeatedly prompt the user for queries until "exit" is typed.
+    private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics)
+    {
+        Console.WriteLine("Entering interactive mode. Type 'exit' to quit.");
+        if (!string.IsNullOrWhiteSpace(initialQuery))
+        {
+            await ProcessQuery(initialQuery, config, maxResults, cliSubtopics);
+        }
+        while (true)
+        {
+            Console.Write("Search> ");
+            string? input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input) || input.Trim().ToLower().Equals("exit"))
+            {
+                break;
+            }
+            await ProcessQuery(input, config, maxResults, cliSubtopics);
+        }
+    }
+
+    // Processes a query: performs a base search then, if subtopics are provided, additional refined searches.
+    private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics)
+    {
+        // Command-line subtopics take precedence over config ones.
+        List<string> subtopics = (cliSubtopics != null && cliSubtopics.Length > 0)
+            ? cliSubtopics.ToList()
+            : config.Subtopics;
+
+        Log.Information($"Performing search for query: {query}");
+
+        // Base search.
+        var baseResults = await SearchDDG(query);
+        if (config.Sites.Count > 0)
+        {
+            baseResults = FilterResultsBySites(baseResults, config.Sites);
+        }
+        Console.WriteLine("\nBase Search Results:");
+        PrintFancyResults(baseResults, maxResults);
+
+        // If subtopics exist, run a refined search for each.
+        if (subtopics.Count > 0)
+        {
+            foreach (var sub in subtopics)
+            {
+                string refinedQuery = $"{query} {sub}";
+                Log.Information($"\nPerforming subtopic search for: {refinedQuery}");
+                var subResults = await SearchDDG(refinedQuery);
+                if (config.Sites.Count > 0)
+                {
+                    subResults = FilterResultsBySites(subResults, config.Sites);
+                }
+                PrintFancyResults(subResults, maxResults);
+            }
+        }
+    }
+
+    // Filters results to include only those whose URL contains one of the allowed site strings.
+    private static List<Result> FilterResultsBySites(List<Result> results, List<string> allowedSites)
+    {
+        return results.Where(r =>
+        {
+            if (string.IsNullOrEmpty(r.URL))
+                return false;
+            foreach (var site in allowedSites)
+            {
+                if (r.URL.Contains(site, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }).ToList();
+    }
+
+    // Loads the configuration from a KDL-style config file.
+    private static BrowserConfig LoadConfig(string path)
+    {
+        if (!File.Exists(path))
+            throw new FileNotFoundException("Config file not found.");
+
+        var config = new BrowserConfig();
+
+        // Initialize Kadlet reader.
+        KdlReader reader = new KdlReader();
+        using (FileStream fs = File.OpenRead(path))
+        {
+            var document = reader.Parse(fs);
+
+            // Find the top-level "browser" node.
+            var browserNode = document.Nodes.FirstOrDefault(n => n.Arguments[0] == "browser");
+            if (browserNode == null)
+                throw new Exception("Browser configuration not found.");
+
+            // Process each child node of the browser block.
+            foreach (var node in browserNode.Children.Nodes)
+            {
+                switch (node.Name)
+                {
+                    case "sites":
+                        // Each argument is expected to be a site string.
+                        foreach (var arg in node.Arguments)
+                        {
+                            config.Sites.Add(arg.Value.ToString());
+                        }
+                        break;
+                    case "repl":
+                        if (node.Arguments.Count > 0)
+                        {
+                            // Expecting a boolean argument.
+                            config.Repl = bool.Parse(node.Arguments[0].Value.ToString());
+                        }
+                        break;
+                    case "search_engine":
+                        if (node.Arguments.Count > 0)
+                        {
+                            config.SearchEngine = node.Arguments[0].Value.ToString();
+                            if (!config.SearchEngine.Equals("duckduckgo", StringComparison.OrdinalIgnoreCase))
+                            {
+                                Console.WriteLine($"Warning: Search engine {config.SearchEngine} not implemented. Defaulting to DuckDuckGo.");
+                                config.SearchEngine = "duckduckgo";
+                            }
+                        }
+                        break;
+                    case "subtopic":
+                        // Each argument is added as a subtopic.
+                        foreach (var arg in node.Arguments)
+                        {
+                            config.Subtopics.Add(arg.Value.ToString());
+                        }
+                        break;
+                }
+            }
+        }
+
+        return config;
+    }
+
+    // Performs a GET request to DuckDuckGo's HTML endpoint.
     private static async Task<List<Result>> SearchDDG(string query)
     {
-        // Build URL with the query string.
         var queryParams = HttpUtility.ParseQueryString(string.Empty);
         queryParams["q"] = query;
         string searchUrl = $"{ddgHTMLURL}?{queryParams}";
@@ -75,16 +244,12 @@ class Program
 
         using (var client = new HttpClient())
         {
-            // Set a browser-like User-Agent header.
-            const string browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36";
             client.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
             HttpResponseMessage response = await client.GetAsync(searchUrl);
             Console.WriteLine($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             if (!response.IsSuccessStatusCode)
-            {
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
-            }
 
             var contentStream = await response.Content.ReadAsStreamAsync();
             var results = ParseHTML(contentStream);
@@ -96,83 +261,63 @@ class Program
     /// <summary>
     /// Parse the HTML content to extract search results.
     /// </summary>
-    private static List<Result> ParseHTML(System.IO.Stream htmlStream)
+    private static List<Result> ParseHTML(Stream htmlStream)
     {
         var results = new List<Result>();
-
         var doc = new HtmlDocument();
         doc.Load(htmlStream);
 
-        // every result from the page
-        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main links_deep result__body')]");
-
+        // Select nodes that represent search results.
+        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
         if (nodes == null)
         {
             Console.WriteLine("No results found.");
-            return Enumerable.Empty<Result>().ToList();
+            return results;
         }
 
         foreach (var node in nodes)
         {
             var result = new Result();
 
-            // Extract the title from the <h2> tag
+            // Extract the title from an <h2> element.
             var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
             if (h2Node != null)
             {
                 var titleLink = h2Node.SelectSingleNode(".//a");
                 if (titleLink != null)
-                {
                     result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
-                }
             }
 
-            // Extract the URL from the <a> tag
+            // Extract URL and snippet.
             var aNodes = node.SelectNodes(".//a");
             if (aNodes != null)
             {
                 foreach (var a in aNodes)
-                {
                     result.URL = a.GetAttributeValue("href", "");
-                }
 
-                // Extract the snippet from the <a> tag with class 'result__snippet'
                 var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
                 if (snippetNode != null)
-                {
                     result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
-                }
             }
 
             if (!string.IsNullOrEmpty(result.URL))
-            {
                 results.Add(result);
-            }
         }
-
         return results;
     }
 
-    /// <summary>
-    /// Abbreviates the snippet if it is too long.
-    /// </summary>
+    // Abbreviates the snippet if it exceeds a maximum word count.
     private static string AbbreviateSnippet(string? snippet)
     {
         if (string.IsNullOrWhiteSpace(snippet))
             return "";
-
         var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
         if (words.Length > maxDescriptionLength)
-        {
             return string.Join(" ", words.Take(maxDescriptionLength)) + "...";
-        }
-
         return snippet;
     }
 
-    /// <summary>
-    /// Prints the results in a formatted manner.
-    /// </summary>
+    // Displays results in a formatted, colorized way.
     private static void PrintFancyResults(List<Result> results, int maxResults)
     {
         string greenBold = "\u001b[1;32m";
@@ -181,7 +326,12 @@ class Program
 
         Console.WriteLine($"{cyanBold}Search Results{reset}\n");
 
-        // Limit results to maximum specified.
+        if (results.Count == 0)
+        {
+            Console.WriteLine("No results to display.");
+            return;
+        }
+
         if (maxResults > results.Count)
         {
             Console.WriteLine("Maximum number of results exceeded. Showing all results.");
