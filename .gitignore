@@ -424,3 +424,5 @@ FodyWeavers.xsd
 *.resources
 test-results/
 
+# Config files
+**/*.toml
