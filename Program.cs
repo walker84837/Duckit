@@ -1,16 +1,17 @@
-﻿using System;
+﻿using System.Collections.Generic;
 using System.CommandLine;
-using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
-using System.IO;
+using System;
 using HtmlAgilityPack;
 using Serilog;
-using Kadlet;
+using Tomlyn;
+using Tomlyn.Model;
 
 namespace Browser;
 
@@ -42,8 +43,8 @@ class Program
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
             .CreateLogger();
-        // Define command-line options.
 
+        // Define command-line options.
         var rootCommand = new RootCommand("Search for things on DuckDuckGo");
         var searchTermOption = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
         var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, () => 10, "Maximum number of results");
@@ -171,180 +172,186 @@ class Program
     }
 
     // Loads the configuration from a KDL-style config file.
-    private static BrowserConfig LoadConfig(string path)
+    using System;
+using System.Collections.Generic;
+using System.IO;
+using Tomlyn;
+using Tomlyn.Model;
+
+private static BrowserConfig LoadConfig(string path)
+{
+    if (!File.Exists(path))
+        throw new FileNotFoundException("Config file not found.");
+
+    // Read the TOML file into a string.
+    var tomlText = File.ReadAllText(path);
+
+    // Parse the TOML content into a model.
+    var model = Toml.ToModel(tomlText) as TomlTable;
+    if (model == null)
+        throw new Exception("Failed to parse TOML configuration.");
+
+    // Ensure the 'browser' section exists.
+    if (!model.ContainsKey("browser"))
+        throw new Exception("Browser configuration not found.");
+
+    var browserTable = model["browser"] as TomlTable;
+    if (browserTable == null)
+        throw new Exception("Browser configuration is not a valid table.");
+
+    var config = new BrowserConfig();
+
+    // Parse 'sites' (expected to be an array of strings)
+    if (browserTable.ContainsKey("sites") && browserTable["sites"] is TomlArray sitesArray)
     {
-        if (!File.Exists(path))
-            throw new FileNotFoundException("Config file not found.");
-
-        var config = new BrowserConfig();
-
-        // Initialize Kadlet reader.
-        KdlReader reader = new KdlReader();
-        using (FileStream fs = File.OpenRead(path))
+        foreach (var site in sitesArray)
         {
-            var document = reader.Parse(fs);
-
-            // Find the top-level "browser" node.
-            var browserNode = document.Nodes.FirstOrDefault(n => n.Arguments[0] == "browser");
-            if (browserNode == null)
-                throw new Exception("Browser configuration not found.");
-
-            // Process each child node of the browser block.
-            foreach (var node in browserNode.Children.Nodes)
-            {
-                switch (node.Name)
-                {
-                    case "sites":
-                        // Each argument is expected to be a site string.
-                        foreach (var arg in node.Arguments)
-                        {
-                            config.Sites.Add(arg.Value.ToString());
-                        }
-                        break;
-                    case "repl":
-                        if (node.Arguments.Count > 0)
-                        {
-                            // Expecting a boolean argument.
-                            config.Repl = bool.Parse(node.Arguments[0].Value.ToString());
-                        }
-                        break;
-                    case "search_engine":
-                        if (node.Arguments.Count > 0)
-                        {
-                            config.SearchEngine = node.Arguments[0].Value.ToString();
-                            if (!config.SearchEngine.Equals("duckduckgo", StringComparison.OrdinalIgnoreCase))
-                            {
-                                Console.WriteLine($"Warning: Search engine {config.SearchEngine} not implemented. Defaulting to DuckDuckGo.");
-                                config.SearchEngine = "duckduckgo";
-                            }
-                        }
-                        break;
-                    case "subtopic":
-                        // Each argument is added as a subtopic.
-                        foreach (var arg in node.Arguments)
-                        {
-                            config.Subtopics.Add(arg.Value.ToString());
-                        }
-                        break;
-                }
-            }
-        }
-
-        return config;
-    }
-
-    // Performs a GET request to DuckDuckGo's HTML endpoint.
-    private static async Task<List<Result>> SearchDDG(string query)
-    {
-        var queryParams = HttpUtility.ParseQueryString(string.Empty);
-        queryParams["q"] = query;
-        string searchUrl = $"{ddgHTMLURL}?{queryParams}";
-
-        Console.WriteLine($"Sending request to: {searchUrl}");
-
-        using (var client = new HttpClient())
-        {
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
-            HttpResponseMessage response = await client.GetAsync(searchUrl);
-            Console.WriteLine($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
-
-            if (!response.IsSuccessStatusCode)
-                throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
-
-            var contentStream = await response.Content.ReadAsStreamAsync();
-            var results = ParseHTML(contentStream);
-            Console.WriteLine("Successfully parsed HTML response");
-            return results;
+            config.Sites.Add(site.ToString());
         }
     }
 
-    /// <summary>
-    /// Parse the HTML content to extract search results.
-    /// </summary>
-    private static List<Result> ParseHTML(Stream htmlStream)
+    // Parse 'repl' (expected to be a boolean)
+    if (browserTable.ContainsKey("repl"))
     {
-        var results = new List<Result>();
-        var doc = new HtmlDocument();
-        doc.Load(htmlStream);
+        config.Repl = Convert.ToBoolean(browserTable["repl"]);
+    }
 
-        // Select nodes that represent search results.
-        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
-        if (nodes == null)
+    // Parse 'search_engine' (expected to be a string)
+    if (browserTable.ContainsKey("search_engine"))
+    {
+        config.SearchEngine = browserTable["search_engine"].ToString();
+        if (!config.SearchEngine.Equals("duckduckgo", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("No results found.");
-            return results;
+            Console.WriteLine($"Warning: Search engine {config.SearchEngine} not implemented. Defaulting to DuckDuckGo.");
+            config.SearchEngine = "duckduckgo";
         }
+    }
 
-        foreach (var node in nodes)
+    // Parse 'subtopic' (expected to be an array of strings)
+    if (browserTable.ContainsKey("subtopic") && browserTable["subtopic"] is TomlArray subtopicsArray)
+    {
+        foreach (var sub in subtopicsArray)
         {
-            var result = new Result();
-
-            // Extract the title from an <h2> element.
-            var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
-            if (h2Node != null)
-            {
-                var titleLink = h2Node.SelectSingleNode(".//a");
-                if (titleLink != null)
-                    result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
-            }
-
-            // Extract URL and snippet.
-            var aNodes = node.SelectNodes(".//a");
-            if (aNodes != null)
-            {
-                foreach (var a in aNodes)
-                    result.URL = a.GetAttributeValue("href", "");
-
-                var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
-                if (snippetNode != null)
-                    result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
-            }
-
-            if (!string.IsNullOrEmpty(result.URL))
-                results.Add(result);
+            config.Subtopics.Add(sub.ToString());
         }
+    }
+
+    return config;
+}
+
+
+// Performs a GET request to DuckDuckGo's HTML endpoint.
+private static async Task<List<Result>> SearchDDG(string query)
+{
+    var queryParams = HttpUtility.ParseQueryString(string.Empty);
+    queryParams["q"] = query;
+    string searchUrl = $"{ddgHTMLURL}?{queryParams}";
+
+    Console.WriteLine($"Sending request to: {searchUrl}");
+
+    using (var client = new HttpClient())
+    {
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
+        HttpResponseMessage response = await client.GetAsync(searchUrl);
+        Console.WriteLine($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
+
+        if (!response.IsSuccessStatusCode)
+            throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
+
+        var contentStream = await response.Content.ReadAsStreamAsync();
+        var results = ParseHTML(contentStream);
+        Console.WriteLine("Successfully parsed HTML response");
+        return results;
+    }
+}
+
+/// <summary>
+/// Parse the HTML content to extract search results.
+/// </summary>
+private static List<Result> ParseHTML(Stream htmlStream)
+{
+    var results = new List<Result>();
+    var doc = new HtmlDocument();
+    doc.Load(htmlStream);
+
+    // Select nodes that represent search results.
+    var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
+    if (nodes == null)
+    {
+        Console.WriteLine("No results found.");
         return results;
     }
 
-    // Abbreviates the snippet if it exceeds a maximum word count.
-    private static string AbbreviateSnippet(string? snippet)
+    foreach (var node in nodes)
     {
-        if (string.IsNullOrWhiteSpace(snippet))
-            return "";
-        var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length > maxDescriptionLength)
-            return string.Join(" ", words.Take(maxDescriptionLength)) + "...";
-        return snippet;
+        var result = new Result();
+
+        // Extract the title from an <h2> element.
+        var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
+        if (h2Node != null)
+        {
+            var titleLink = h2Node.SelectSingleNode(".//a");
+            if (titleLink != null)
+                result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
+        }
+
+        // Extract URL and snippet.
+        var aNodes = node.SelectNodes(".//a");
+        if (aNodes != null)
+        {
+            foreach (var a in aNodes)
+                result.URL = a.GetAttributeValue("href", "");
+
+            var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
+            if (snippetNode != null)
+                result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
+        }
+
+        if (!string.IsNullOrEmpty(result.URL))
+            results.Add(result);
+    }
+    return results;
+}
+
+// Abbreviates the snippet if it exceeds a maximum word count.
+private static string AbbreviateSnippet(string? snippet)
+{
+    if (string.IsNullOrWhiteSpace(snippet))
+        return "";
+    var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+    if (words.Length > maxDescriptionLength)
+        return string.Join(" ", words.Take(maxDescriptionLength)) + "...";
+    return snippet;
+}
+
+// Displays results in a formatted, colorized way.
+private static void PrintFancyResults(List<Result> results, int maxResults)
+{
+    string greenBold = "\u001b[1;32m";
+    string cyanBold = "\u001b[1;36m";
+    string reset = "\u001b[0m";
+
+    Console.WriteLine($"{cyanBold}Search Results{reset}\n");
+
+    if (results.Count == 0)
+    {
+        Console.WriteLine("No results to display.");
+        return;
     }
 
-    // Displays results in a formatted, colorized way.
-    private static void PrintFancyResults(List<Result> results, int maxResults)
+    if (maxResults > results.Count)
     {
-        string greenBold = "\u001b[1;32m";
-        string cyanBold = "\u001b[1;36m";
-        string reset = "\u001b[0m";
-
-        Console.WriteLine($"{cyanBold}Search Results{reset}\n");
-
-        if (results.Count == 0)
-        {
-            Console.WriteLine("No results to display.");
-            return;
-        }
-
-        if (maxResults > results.Count)
-        {
-            Console.WriteLine("Maximum number of results exceeded. Showing all results.");
-            maxResults = results.Count;
-        }
-
-        for (int i = 0; i < maxResults; i++)
-        {
-            var result = results[i];
-            Console.WriteLine($"{greenBold}Title:{reset}\t{result.Title}");
-            Console.WriteLine($"{greenBold}URL:{reset}\t{result.URL}");
-            Console.WriteLine($"{greenBold}Snippet:{reset}\t{AbbreviateSnippet(result.Snippet)}");
-            Console.WriteLine();
-        }
+        Console.WriteLine("Maximum number of results exceeded. Showing all results.");
+        maxResults = results.Count;
     }
+
+    for (int i = 0; i < maxResults; i++)
+    {
+        var result = results[i];
+        Console.WriteLine($"{greenBold}Title:{reset}\t{result.Title}");
+        Console.WriteLine($"{greenBold}URL:{reset}\t{result.URL}");
+        Console.WriteLine($"{greenBold}Snippet:{reset}\t{AbbreviateSnippet(result.Snippet)}");
+        Console.WriteLine();
+    }
+}
 }
