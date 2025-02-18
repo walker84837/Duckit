@@ -1,90 +1,75 @@
-# Search Tool README
+# Duckit
 
 ## Overview
 
-This project is a simple search tool that queries DuckDuckGo Lite for results based on user-defined search terms. It allows users to specify valid websites to filter results and the maximum number of pages to search. The configuration can be loaded from a file, and if no configuration is found, default values are used.
+Duckit is a simple search tool that queries DuckDuckGo Lite for results based on user-defined search terms. It allows users to specify valid websites to filter results and the maximum number of pages to search. The configuration can be loaded from a file, and if no configuration is found, default values are used.
 
 ## Features
 
-- Load configuration from various file formats (YAML, plain text).
-- Specify valid websites to filter search results.
-- Set a maximum number of pages to search.
-- Fallback to default configuration if no config file is found.
-- Parse HTML results from DuckDuckGo Lite and display valid links.
-
-## Requirements
-
-- Scala 2.13 or higher
-- sbt (Scala Build Tool)
-- Dependencies:
-  - `sttp.client3` for HTTP requests
-  - `Jsoup` for HTML parsing
-  - `circe` for JSON and YAML parsing
-  - `scala-logging` for logging
+* Load configuration from a TOML file.
+* Specify valid websites to filter search results.
+* Set a maximum number of results to display.
+* Support for subtopics to refine search results.
+* Interactive mode for repeatedly prompting the user for queries.
 
 ## Configuration
 
-The configuration can be specified in a file with the following options:
+The configuration can be specified in a TOML file with the following options:
 
-- `validWebsites`: A comma-separated list of websites to filter results (e.g., `reddit.com,stackoverflow.com`).
-- `maxPages`: An integer specifying the maximum number of pages to search.
+* `sites`: A list of websites to filter results (e.g., `["reddit.com", "stackoverflow.com"]`).
+* `repl`: A boolean indicating whether to enable interactive mode.
+* `search_engine`: A string specifying the search engine to use (currently only supports DuckDuckGo).
+* `subtopic`: A list of subtopics to refine search results.
+
+### Example `config.toml`
+
+```toml
+[browser]
+sites = ["reddit.com", "stackoverflow.com"]
+repl = true
+search_engine = "duckduckgo"
+subtopic = ["quicksort", "jvm"]
+```
 
 ### Default Configuration
 
 If no configuration file is found, the following default values are used:
 
-- **Valid Websites**: `reddit.com`, `stackoverflow.com`, `stackexchange.com`, `medium.com`
-- **Max Pages**: `10`
-
-### Configuration File Locations
-
-The tool will look for configuration files in the following locations (in order):
-
-1. `~/.config/search_tool/config.yml`
-2. `~/.config/search_tool/config.yaml`
-3. `~/.config/search_tool/config.xml`
-4. `~/.config/search_tool/config.txt`
-5. `config.yml`
-6. `config.yaml`
-7. `config.xml`
-8. `config.txt`
+* **Valid Websites**: None
+* **Max Results**: 10
+* **Search Engine**: DuckDuckGo
+* **Subtopics**: None
 
 ## Usage
 
-### Running the Tool
-
-You can run the tool from the command line. If no search term is provided as an argument, the tool will prompt you to enter one.
-
-```bash
-sbt run
-```
+You can run Duckit from the command line. If no search term is provided as an argument, you'll be shown the usage.
 
 ### Command Line Arguments
 
-- You can provide a search term directly as command line arguments. For example:
+* You can provide a search term directly as a command-line argument. For example:
+  ```bash
+  dotnet run --term "your search term"
+  ```
 
-```bash
-sbt run "your search term"
-```
+* You can specify a configuration file using the `--config` option. For example:
+  ```bash
+  dotnet run --config path/to/config.toml --term "quicksort rust"
+  ```
 
-### Output
+* You can enable interactive mode using the `--interactive` option. For example:
+  ```bash
+  dotnet run --interactive
+  ```
 
-The tool will display the search results in the console, showing the title and link of each valid result. If no results are found, a message will indicate that.
-
-## Logging
-
-The tool uses a console logger to output messages regarding the status of the search, including errors and warnings.
-
-## Error Handling
-
-The tool includes error handling for:
-
-- Missing or unreadable configuration files.
-- Errors during HTTP requests.
-- Parsing errors for configuration files.
-
-In case of errors, the tool will fall back to default configurations and log appropriate messages.
+* You can specify subtopics using the `--subtopic` option. For example:
+  ```bash
+  dotnet run --term "how to install arch linux" --subtopic "archwiki"
+  ```
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs or feature requests.
+
+## License
+
+
