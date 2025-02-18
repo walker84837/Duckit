@@ -134,7 +134,6 @@ class Program
         {
             baseResults = FilterResultsBySites(baseResults, config.Sites);
         }
-        Console.WriteLine("\nBase Search Results:");
         PrintFancyResults(baseResults, maxResults);
 
         // If subtopics exist, run a refined search for each.
@@ -233,20 +232,20 @@ class Program
         queryParams["q"] = query;
         string searchUrl = $"{ddgHTMLURL}?{queryParams}";
 
-        Console.WriteLine($"Sending request to: {searchUrl}");
+        Log.Information($"Sending request to: {searchUrl}");
 
         using (var client = new HttpClient())
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
             HttpResponseMessage response = await client.GetAsync(searchUrl);
-            Console.WriteLine($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
+            Log.Information($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             if (!response.IsSuccessStatusCode)
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             var contentStream = await response.Content.ReadAsStreamAsync();
             var results = ParseHTML(contentStream);
-            Console.WriteLine("Successfully parsed HTML response");
+            Log.Information("Successfully parsed HTML response");
             return results;
         }
     }
@@ -318,13 +317,17 @@ class Program
     // Displays results in a formatted, colorized way.
     private static void PrintFancyResults(List<Result> results, int maxResults)
     {
+        const string cyanBold = "\e[1;36m";
+
         const string green = "\u001b[32m";
         const string cyan = "\u001b[36m";
         const string red = "\u001b[31m";
         const string yellow = "\u001b[33m";
         const string reset = "\u001b[0m";
+        const string blue = "\u001b[34m";
+        const string purple = "\u001b[35m";
 
-        Console.WriteLine($"{cyan}Search results{reset}\n");
+        Console.WriteLine($"{cyanBold}Search results{reset}\n");
 
         if (results.Count == 0)
         {
@@ -341,9 +344,9 @@ class Program
         for (int i = 0; i < maxResults; i++)
         {
             var result = results[i];
-            Console.WriteLine($"{greenBold}Title:{reset} {result.Title}");
-            Console.WriteLine($"- {greenBold}URL:{reset} {result.URL}");
-            Console.WriteLine($"- {greenBold}Snippet:{reset} {AbbreviateSnippet(result.Snippet)}");
+            Console.WriteLine($"{blue}Title:{reset} {result.Title}");
+            Console.WriteLine($"- {purple}URL:{reset} {result.URL}");
+            Console.WriteLine($"- {green}Snippet:{reset} {AbbreviateSnippet(result.Snippet)}");
             Console.WriteLine();
         }
     }
