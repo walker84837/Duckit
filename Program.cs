@@ -15,6 +15,9 @@ using Tomlyn;
 
 namespace Duckit;
 
+/// <summary>
+/// Search result obtained by the search engine.
+/// </summary>
 public class Result
 {
     public string? Title { get; set; }
@@ -22,7 +25,9 @@ public class Result
     public string? Snippet { get; set; }
 }
 
-// Configuration object reflecting our KDL config options.
+/// <summary>
+/// Configuration object reflecting our config options.
+/// </summary>
 public class BrowserConfig
 {
     public List<string> Sites { get; set; } = new List<string>();
@@ -99,7 +104,9 @@ class Program
         return await rootCommand.InvokeAsync(args);
     }
 
-    // REPL loop: repeatedly prompt the user for queries until "exit" is typed.
+    /// <summary>
+    /// REPL loop: repeatedly prompt the user for queries until "exit" is typed.
+    /// </summary>
     private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics)
     {
         Console.WriteLine("Entering interactive mode. Type 'exit' to quit.");
@@ -118,7 +125,9 @@ class Program
         }
     }
 
-    // Processes a query: performs a base search then, if subtopics are provided, additional refined searches.
+    /// <summary>
+    /// Processes a query: performs a base search then, if subtopics are provided, additional refined searches.
+    /// </summary>
     private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics)
     {
         // Command-line subtopics take precedence over config ones.
@@ -153,7 +162,9 @@ class Program
         }
     }
 
-    // Filters results to include only those whose URL contains one of the allowed site strings.
+    /// <summary>
+    /// Filters results to include only those whose URL contains one of the allowed site strings.
+    /// </summary>
     private static List<Result> FilterResultsBySites(List<Result> results, List<string> allowedSites)
     {
         return results.Where(r =>
@@ -169,6 +180,9 @@ class Program
         }).ToList();
     }
 
+    /// <summary>
+    /// Loads the config file provided in the arguments
+    /// </summary>
     private static BrowserConfig LoadConfig(string path)
     {
         if (!File.Exists(path))
@@ -298,7 +312,9 @@ class Program
         return results;
     }
 
-    // Abbreviates the snippet if it exceeds a maximum word count.
+    /// <summary>
+    /// Abbreviates the snippet if it exceeds a maximum word count.
+    /// </summary>
     private static string AbbreviateSnippet(string? snippet)
     {
         if (string.IsNullOrWhiteSpace(snippet))
@@ -314,7 +330,9 @@ class Program
         return snippet;
     }
 
-    // Displays results in a formatted, colorized way.
+    /// <summary>
+    /// Displays results in a formatted, colorized way.
+    /// </summary>
     private static void PrintFancyResults(List<Result> results, int maxResults)
     {
         const string cyanBold = "\e[1;36m";
