@@ -2,6 +2,8 @@
 
 ## Overview
 
+![duckit](https://github.com/user-attachments/assets/27f0b632-27ef-457f-bf58-bad6596de3c3)
+
 Duckit is a simple search tool that queries DuckDuckGo Lite for results based on user-defined search terms. It allows users to specify valid websites to filter results and the maximum number of pages to search. The configuration can be loaded from a file, and if no configuration is found, default values are used.
 
 ## Features
@@ -69,6 +71,11 @@ You can run Duckit from the command line. If no search term is provided as an ar
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs or feature requests.
+
+### Roadmap
+
+- [ ] Unit tests for HTML parsing
+- [ ] Implement searching from more search engine (even though for now just DuckDuckGo works well)
 
 ## License
 
