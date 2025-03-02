@@ -1,4 +1,4 @@
-﻿using HtmlAgilityPack;
+using HtmlAgilityPack;
 using Serilog;
 using System.Collections.Generic;
 using System.CommandLine;
