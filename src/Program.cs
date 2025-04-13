@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net;
+using System.Text.Json;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
@@ -43,6 +44,12 @@ class Program
     private const int maxDescriptionLength = 20;
     private static readonly string[] exitKeywords = new string[] { "exit", "quit", "q", "bye" };
 
+    // Reuse a single HttpClient instance throughout the application's lifetime.
+    private static readonly HttpClient httpClient = new HttpClient()
+    {
+        Timeout = TimeSpan.FromSeconds(30)
+    };
+
     static async Task<int> Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
@@ -53,6 +60,7 @@ class Program
         var rootCommand = new RootCommand("Search for things on DuckDuckGo");
         var searchTermOption = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
         var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, () => 10, "Maximum number of results");
+        var linksOnlyOption = new Option<bool>(new[] { "--links-only", "-l" }, "Output only URLs of the search results.");
 
         // Command-line subtopic option (can override config subtopics)
         var subtopicOption = new Option<string[]>(new[] { "--subtopic", "-s", "-sub" }, "Subtopics to refine the search");
@@ -64,11 +72,12 @@ class Program
         rootCommand.AddOption(resultNumberOption);
         rootCommand.AddOption(interactiveOption);
         rootCommand.AddOption(subtopicOption);
+        rootCommand.AddOption(linksOnlyOption);
 
         // Initialize a default config.
         BrowserConfig config = new BrowserConfig();
 
-        rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive) =>
+        rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive, linksOnly) =>
         {
             // If a config file is provided, load and parse it.
             if (!string.IsNullOrWhiteSpace(configPath))
@@ -87,7 +96,7 @@ class Program
             // Enable interactive mode if set in config or via command-line.
             if (config.Repl || interactive)
             {
-                await RunInteractiveMode(config, maxResults, query, cliSubtopics);
+                await RunInteractiveMode(config, maxResults, query, cliSubtopics, linksOnly);
             }
             else
             {
@@ -96,10 +105,10 @@ class Program
                     Log.Warning("No search query entered.");
                     return;
                 }
-                await ProcessQuery(query, config, maxResults, cliSubtopics);
+                await ProcessQuery(query, config, maxResults, cliSubtopics, linksOnly);
             }
         },
-        searchTermOption, configOption, resultNumberOption, subtopicOption, interactiveOption);
+        searchTermOption, configOption, resultNumberOption, subtopicOption, interactiveOption, linksOnlyOption);
 
         return await rootCommand.InvokeAsync(args);
     }
@@ -107,12 +116,12 @@ class Program
     /// <summary>
     /// REPL loop: repeatedly prompt the user for queries until "exit" is typed.
     /// </summary>
-    private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics)
+    private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics, bool linksOnly)
     {
         Console.WriteLine("Entering interactive mode. Type 'exit' to quit.");
         if (!string.IsNullOrWhiteSpace(initialQuery))
         {
-            await ProcessQuery(initialQuery, config, maxResults, cliSubtopics);
+            await ProcessQuery(initialQuery, config, maxResults, cliSubtopics, linksOnly);
         }
         while (true)
         {
@@ -121,14 +130,14 @@ class Program
             {
                 break;
             }
-            await ProcessQuery(input, config, maxResults, cliSubtopics);
+            await ProcessQuery(input, config, maxResults, cliSubtopics, linksOnly);
         }
     }
 
     /// <summary>
     /// Processes a query: performs a base search then, if subtopics are provided, additional refined searches.
     /// </summary>
-    private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics)
+    private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics, bool linksOnly)
     {
         // Command-line subtopics take precedence over config ones.
         List<string> subtopics = (cliSubtopics != null && cliSubtopics.Length > 0)
@@ -138,12 +147,12 @@ class Program
         Log.Information($"Performing search for query: {query}");
 
         // Base search.
-        var baseResults = await SearchDDG(query);
+        var baseResults = await SafeSearch(query);
         if (config.Sites.Count > 0)
         {
             baseResults = FilterResultsBySites(baseResults, config.Sites);
         }
-        PrintFancyResults(baseResults, maxResults);
+        PrintResults(baseResults, maxResults, linksOnly);
 
         // If subtopics exist, run a refined search for each.
         if (subtopics.Count > 0)
@@ -151,13 +160,13 @@ class Program
             foreach (var sub in subtopics)
             {
                 string refinedQuery = $"{query} {sub}";
-                Log.Information($"\nPerforming subtopic search for: {refinedQuery}");
-                var subResults = await SearchDDG(refinedQuery);
+                Log.Information($"Performing subtopic search for: {refinedQuery}");
+                var subResults = await SafeSearch(refinedQuery);
                 if (config.Sites.Count > 0)
                 {
                     subResults = FilterResultsBySites(subResults, config.Sites);
                 }
-                PrintFancyResults(subResults, maxResults);
+                PrintResults(subResults, maxResults, linksOnly);
             }
         }
     }
@@ -181,7 +190,7 @@ class Program
     }
 
     /// <summary>
-    /// Loads the config file provided in the arguments
+    /// Loads the config file provided in the arguments.
     /// </summary>
     private static BrowserConfig LoadConfig(string path)
     {
@@ -189,7 +198,6 @@ class Program
             throw new FileNotFoundException("Config file not found.");
 
         var tomlText = File.ReadAllText(path);
-
         var model = Toml.ToModel(tomlText) as TomlTable;
         if (model == null)
             throw new Exception("Failed to parse TOML configuration.");
@@ -238,6 +246,22 @@ class Program
     }
 
     /// <summary>
+    /// Wraps the search call in error handling.
+    /// </summary>
+    private static async Task<List<Result>> SafeSearch(string query)
+    {
+        try
+        {
+            return await SearchDDG(query);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Error while searching for \"{query}\": {ex.Message}");
+            return new List<Result>();
+        }
+    }
+
+    /// <summary>
     /// Performs a GET request to DuckDuckGo's HTML endpoint.
     /// </summary>
     private static async Task<List<Result>> SearchDDG(string query)
@@ -248,10 +272,11 @@ class Program
 
         Log.Information($"Sending request to: {searchUrl}");
 
-        using (var client = new HttpClient())
+        try
         {
-            client.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
-            HttpResponseMessage response = await client.GetAsync(searchUrl);
+            // Reuse the static HttpClient
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
+            HttpResponseMessage response = await httpClient.GetAsync(searchUrl);
             Log.Information($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             if (!response.IsSuccessStatusCode)
@@ -262,6 +287,11 @@ class Program
             Log.Information("Successfully parsed HTML response");
             return results;
         }
+        catch (Exception ex)
+        {
+            Log.Error($"Error during HTTP request: {ex.Message}");
+            throw;
+        }
     }
 
     /// <summary>
@@ -270,44 +300,53 @@ class Program
     private static List<Result> ParseHTML(Stream htmlStream)
     {
         var results = new List<Result>();
-        var doc = new HtmlDocument();
-        doc.Load(htmlStream);
-
-        // Select nodes that represent search results.
-        var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
-        if (nodes == null)
+        try
         {
-            Console.WriteLine("No results found.");
-            return results;
+            var doc = new HtmlDocument();
+            doc.Load(htmlStream);
+
+            // Select nodes that represent search results.
+            var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
+            if (nodes == null)
+            {
+                Log.Warning("No results found in the HTML response.");
+                return results;
+            }
+
+            foreach (var node in nodes)
+            {
+                var result = new Result();
+
+                // Extract the title from an <h2> element.
+                var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
+                if (h2Node != null)
+                {
+                    var titleLink = h2Node.SelectSingleNode(".//a");
+                    if (titleLink != null)
+                        result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
+                }
+
+                // Extract URL and snippet.
+                var aNodes = node.SelectNodes(".//a");
+                if (aNodes != null)
+                {
+                    foreach (var a in aNodes)
+                    {
+                        result.URL = a.GetAttributeValue("href", "");
+                    }
+
+                    var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
+                    if (snippetNode != null)
+                        result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
+                }
+
+                if (!string.IsNullOrEmpty(result.URL))
+                    results.Add(result);
+            }
         }
-
-        foreach (var node in nodes)
+        catch (Exception ex)
         {
-            var result = new Result();
-
-            // Extract the title from an <h2> element.
-            var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
-            if (h2Node != null)
-            {
-                var titleLink = h2Node.SelectSingleNode(".//a");
-                if (titleLink != null)
-                    result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
-            }
-
-            // Extract URL and snippet.
-            var aNodes = node.SelectNodes(".//a");
-            if (aNodes != null)
-            {
-                foreach (var a in aNodes)
-                    result.URL = a.GetAttributeValue("href", "");
-
-                var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
-                if (snippetNode != null)
-                    result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
-            }
-
-            if (!string.IsNullOrEmpty(result.URL))
-                results.Add(result);
+            Log.Error($"Error parsing HTML: {ex.Message}");
         }
         return results;
     }
@@ -331,12 +370,35 @@ class Program
     }
 
     /// <summary>
-    /// Displays results in a formatted, colorized way.
+    /// Displays results either as fancy, colorized output or plain output for redirection.
+    /// If linksOnly is true, only the URLs are output.
     /// </summary>
-    private static void PrintFancyResults(List<Result> results, int maxResults)
+    private static void PrintResults(List<Result> results, int maxResults, bool linksOnly)
+    {
+        bool isRedirected = Console.IsOutputRedirected;
+        if (linksOnly)
+        {
+            // Print only URLs.
+            foreach (var result in results.Take(maxResults))
+            {
+                Console.WriteLine(result.URL);
+            }
+            return;
+        }
+
+        if (!isRedirected)
+        {
+            PrintFormattedLinks(results, maxResults);
+        }
+        else
+        {
+            PrintLinksAsJSON(results);
+        }
+    }
+
+    private static void PrintFormattedLinks(List<Result> results, int maxResults)
     {
         const string cyanBold = "\e[1;36m";
-
         const string green = "\u001b[32m";
         const string cyan = "\u001b[36m";
         const string red = "\u001b[31m";
@@ -367,5 +429,10 @@ class Program
             Console.WriteLine($"- {green}Snippet:{reset} {AbbreviateSnippet(result.Snippet)}");
             Console.WriteLine();
         }
+    }
+
+    private static void PrintLinksAsJSON(List<Result> results)
+    {
+        Console.WriteLine(JsonSerializer.Serialize(results));
     }
 }
