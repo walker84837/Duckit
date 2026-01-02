@@ -1,16 +1,9 @@
 using HtmlAgilityPack;
 using Serilog;
-using System.Collections.Generic;
 using System.CommandLine;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
 using System.Net;
 using System.Text.Json;
 using System.Text;
-using System.Threading.Tasks;
-using System.Web;
-using System;
 using Tomlyn.Model;
 using Tomlyn;
 
@@ -22,8 +15,10 @@ namespace Duckit;
 public class Result
 {
     public string? Title { get; set; }
-    public string? URL { get; set; }
+    public string? Url { get; set; }
+    public string? DisplayUrl { get; set; }
     public string? Snippet { get; set; }
+    public string? Date { get; set; }
 }
 
 /// <summary>
@@ -39,16 +34,29 @@ public class BrowserConfig
 
 class Program
 {
-    private const string ddgHTMLURL = "https://duckduckgo.com/html/";
-    private const string browserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.3";
-    private const int maxDescriptionLength = 20;
-    private static readonly string[] exitKeywords = new string[] { "exit", "quit", "q", "bye" };
+    private const string DdgHtmlUrl = "https://html.duckduckgo.com/html/ ";
+    private const string BrowserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
+    private const int MaxDescriptionLength = 20;
+    private static readonly string[] ExitKeywords = ["exit", "quit", "q", "bye"];
+    private static readonly HttpClient HttpClient = new();
 
-    // Reuse a single HttpClient instance throughout the application's lifetime.
-    private static readonly HttpClient httpClient = new HttpClient()
+    static Program()
     {
-        Timeout = TimeSpan.FromSeconds(30)
-    };
+        HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd(BrowserAgent);
+        HttpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        HttpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.5");
+        HttpClient.DefaultRequestHeaders.Add("Referer", "https://html.duckduckgo.com/ ");
+        HttpClient.DefaultRequestHeaders.Add("Origin", "https://html.duckduckgo.com ");
+        HttpClient.DefaultRequestHeaders.Add("DNT", "1");
+        HttpClient.DefaultRequestHeaders.Add("Connection", "keep-alive");
+        HttpClient.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
+        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
+        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
+        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-User", "?1");
+        HttpClient.DefaultRequestHeaders.Add("Priority", "u=0, i");
+        HttpClient.DefaultRequestHeaders.Add("TE", "trailers");
+    }
 
     static async Task<int> Main(string[] args)
     {
@@ -58,14 +66,14 @@ class Program
 
         // Define command-line options.
         var rootCommand = new RootCommand("Search for things on DuckDuckGo");
-        var searchTermOption = new Option<string>(new[] { "--term", "-t" }, "The query to search for");
-        var resultNumberOption = new Option<int>(new[] { "--results", "-r", "-res" }, () => 10, "Maximum number of results");
-        var linksOnlyOption = new Option<bool>(new[] { "--links-only", "-l" }, "Output only URLs of the search results.");
+        var searchTermOption = new Option<string>(["--term", "-t"], "The query to search for");
+        var resultNumberOption = new Option<int>(["--results", "-r", "-res"], () => 10, "Maximum number of results");
+        var linksOnlyOption = new Option<bool>(["--links-only", "-l"], "Output only URLs of the search results.");
 
         // Command-line subtopic option (can override config subtopics)
-        var subtopicOption = new Option<string[]>(new[] { "--subtopic", "-s", "-sub" }, "Subtopics to refine the search");
-        var configOption = new Option<string>(new[] { "--config", "-c", "-conf" }, "Path to the config file");
-        var interactiveOption = new Option<bool>(new[] { "--interactive", "-i", "-int" }, "Enable interactive mode");
+        var subtopicOption = new Option<string[]>(["--subtopic", "-s", "-sub"], "Subtopics to refine the search");
+        var configOption = new Option<string>(["--config", "-c", "-conf"], "Path to the config file");
+        var interactiveOption = new Option<bool>(["--interactive", "-i", "-int"], "Enable interactive mode");
 
         rootCommand.AddOption(searchTermOption);
         rootCommand.AddOption(configOption);
@@ -75,7 +83,7 @@ class Program
         rootCommand.AddOption(linksOnlyOption);
 
         // Initialize a default config.
-        BrowserConfig config = new BrowserConfig();
+        var config = new BrowserConfig();
 
         rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive, linksOnly) =>
         {
@@ -89,7 +97,7 @@ class Program
                 }
                 catch (Exception ex)
                 {
-                    Log.Error($"Failed to load config: {ex.Message}");
+                    Log.Error("Failed to load config: {Message}", ex.Message);
                 }
             }
 
@@ -126,7 +134,7 @@ class Program
         while (true)
         {
             string input = ReadLine.Read("Search> ").Trim().ToLower();
-            if (string.IsNullOrWhiteSpace(input) || exitKeywords.Contains(input))
+            if (string.IsNullOrWhiteSpace(input) || ExitKeywords.Contains(input))
             {
                 break;
             }
@@ -140,11 +148,11 @@ class Program
     private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics, bool linksOnly)
     {
         // Command-line subtopics take precedence over config ones.
-        List<string> subtopics = (cliSubtopics != null && cliSubtopics.Length > 0)
+        var subtopics = cliSubtopics is { Length: > 0 }
             ? cliSubtopics.ToList()
             : config.Subtopics;
 
-        Log.Information($"Performing search for query: {query}");
+        Log.Information("Performing search for query: {Query}", query);
 
         // Base search.
         var baseResults = await SafeSearch(query);
@@ -159,8 +167,8 @@ class Program
         {
             foreach (var sub in subtopics)
             {
-                string refinedQuery = $"{query} {sub}";
-                Log.Information($"Performing subtopic search for: {refinedQuery}");
+                var refinedQuery = $"{query} {sub}";
+                Log.Information("Performing subtopic search for: {RefinedQuery}", refinedQuery);
                 var subResults = await SafeSearch(refinedQuery);
                 if (config.Sites.Count > 0)
                 {
@@ -178,11 +186,12 @@ class Program
     {
         return results.Where(r =>
         {
-            if (string.IsNullOrEmpty(r.URL))
+            if (string.IsNullOrEmpty(r.Url))
                 return false;
+
             foreach (var site in allowedSites)
             {
-                if (r.URL.Contains(site, StringComparison.OrdinalIgnoreCase))
+                if (r.Url.Contains(site, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
             return false;
@@ -198,15 +207,14 @@ class Program
             throw new FileNotFoundException("Config file not found.");
 
         var tomlText = File.ReadAllText(path);
-        var model = Toml.ToModel(tomlText) as TomlTable;
+        var model = Toml.ToModel(tomlText);
         if (model == null)
             throw new Exception("Failed to parse TOML configuration.");
 
         if (!model.ContainsKey("browser"))
             throw new Exception("Browser configuration not found.");
 
-        var browserTable = model["browser"] as TomlTable;
-        if (browserTable == null)
+        if (model["browser"] is not TomlTable browserTable)
             throw new Exception("Browser configuration is not a valid table.");
 
         var config = new BrowserConfig();
@@ -229,7 +237,7 @@ class Program
             config.SearchEngine = browserTable["search_engine"].ToString();
             if (!config.SearchEngine.Equals("duckduckgo", StringComparison.OrdinalIgnoreCase))
             {
-                Log.Warning($"Warning: Search engine {config.SearchEngine} not implemented. Defaulting to DuckDuckGo.");
+                Log.Warning("Warning: Search engine {SearchEngine} not implemented. Defaulting to DuckDuckGo.", config.SearchEngine);
                 config.SearchEngine = "duckduckgo";
             }
         }
@@ -262,34 +270,39 @@ class Program
     }
 
     /// <summary>
-    /// Performs a GET request to DuckDuckGo's HTML endpoint.
+    /// Performs a POST request to DuckDuckGo's HTML endpoint.
     /// </summary>
     private static async Task<List<Result>> SearchDDG(string query)
     {
-        var queryParams = HttpUtility.ParseQueryString(string.Empty);
-        queryParams["q"] = query;
-        string searchUrl = $"{ddgHTMLURL}?{queryParams}";
+        var formData = new Dictionary<string, string>
+        {
+            { "q", query },
+            { "b", "" },
+            { "kl", "" },
+            { "df", "" }
+        };
+        var content = new FormUrlEncodedContent(formData);
 
-        Log.Information($"Sending request to: {searchUrl}");
+        Log.Information("Sending POST request to: {DuckDuckGoUrl} with query: {Query}", DdgHtmlUrl, query);
 
         try
         {
-            // Reuse the static HttpClient
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(browserAgent);
-            HttpResponseMessage response = await httpClient.GetAsync(searchUrl);
-            Log.Information($"Received response: {(int)response.StatusCode} {response.ReasonPhrase}");
+            var response = await HttpClient.PostAsync(DdgHtmlUrl, content);
+            Log.Information("Received response: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
 
             if (!response.IsSuccessStatusCode)
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
-            var contentStream = await response.Content.ReadAsStreamAsync();
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            using var contentStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody));
             var results = ParseHTML(contentStream);
             Log.Information("Successfully parsed HTML response");
             return results;
         }
         catch (Exception ex)
         {
-            Log.Error($"Error during HTTP request: {ex.Message}");
+            Log.Error("Error during HTTP POST request: {Exception}", ex.Message);
             throw;
         }
     }
@@ -299,13 +312,13 @@ class Program
     /// </summary>
     private static List<Result> ParseHTML(Stream htmlStream)
     {
-        var results = new List<Result>();
+        List<Result> results = [];
         try
         {
             var doc = new HtmlDocument();
             doc.Load(htmlStream);
 
-            // Select nodes that represent search results.
+            // Select nodes that represent search results
             var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
             if (nodes == null)
             {
@@ -317,7 +330,7 @@ class Program
             {
                 var result = new Result();
 
-                // Extract the title from an <h2> element.
+                // Extract the title from an <h2> element
                 var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
                 if (h2Node != null)
                 {
@@ -326,27 +339,48 @@ class Program
                         result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
                 }
 
-                // Extract URL and snippet.
-                var aNodes = node.SelectNodes(".//a");
-                if (aNodes != null)
+                // Extract URL, DisplayUrl, and snippet.
+                var urlLink = node.SelectSingleNode(".//a[contains(@class, 'result__a')]");
+                if (urlLink != null)
                 {
-                    foreach (var a in aNodes)
-                    {
-                        result.URL = a.GetAttributeValue("href", "");
-                    }
-
-                    var snippetNode = aNodes.FirstOrDefault(n => n.GetAttributeValue("class", "").Contains("result__snippet"));
-                    if (snippetNode != null)
-                        result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
+                    result.Url = urlLink.GetAttributeValue("href", "");
                 }
 
-                if (!string.IsNullOrEmpty(result.URL))
+                var displayUrlNode = node.SelectSingleNode(".//a[contains(@class, 'result__url')]");
+                if (displayUrlNode != null)
+                {
+                    result.DisplayUrl = WebUtility.HtmlDecode(displayUrlNode.InnerText.Trim());
+                }
+
+                var snippetNode = node.SelectSingleNode(".//a[contains(@class, 'result__snippet')]");
+                if (snippetNode != null)
+                {
+                    result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
+                }
+
+                // Extract Date if available
+                var dateNode = node.SelectSingleNode(".//div[contains(@class, 'result__extras')]//span[not(contains(@class, 'result__icon')) and not(contains(@class, 'result__url'))]");
+                if (dateNode != null)
+                {
+                    // Clean up the date string (remove leading/trailing spaces and the HTML entity for space)
+                    var dateText = dateNode.InnerText.Replace("&nbsp;", "").Trim();
+                    if (!string.IsNullOrWhiteSpace(dateText))
+                    {
+                        // Attempt to parse the date. The format in the HTML looks like RFC 3339, so
+                        // "2025-06-07T00:00:00.0000000", or just "2025-06-07" if the time part is omitted in some cases.
+                        // We can try to parse it as DateTime and then format it nicely, or just keep the string. For
+                        // now, let's just keep the string after cleaning it up.
+                        result.Date = dateText;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(result.Url))
                     results.Add(result);
             }
         }
         catch (Exception ex)
         {
-            Log.Error($"Error parsing HTML: {ex.Message}");
+            Log.Error("Error parsing HTML: {Exception}", ex.Message);
         }
         return results;
     }
@@ -361,10 +395,10 @@ class Program
             return "";
         }
 
-        var words = snippet.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length > maxDescriptionLength)
+        var words = snippet.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > MaxDescriptionLength)
         {
-            return string.Join(" ", words.Take(maxDescriptionLength)) + "...";
+            return string.Join(" ", words.Take(MaxDescriptionLength)) + "...";
         }
         return snippet;
     }
@@ -375,13 +409,13 @@ class Program
     /// </summary>
     private static void PrintResults(List<Result> results, int maxResults, bool linksOnly)
     {
-        bool isRedirected = Console.IsOutputRedirected;
+        var isRedirected = Console.IsOutputRedirected;
         if (linksOnly)
         {
             // Print only URLs.
             foreach (var result in results.Take(maxResults))
             {
-                Console.WriteLine(result.URL);
+                Console.WriteLine(result.Url);
             }
             return;
         }
@@ -400,7 +434,6 @@ class Program
     {
         const string cyanBold = "\e[1;36m";
         const string green = "\u001b[32m";
-        const string cyan = "\u001b[36m";
         const string red = "\u001b[31m";
         const string yellow = "\u001b[33m";
         const string reset = "\u001b[0m";
@@ -421,12 +454,18 @@ class Program
             maxResults = results.Count;
         }
 
+        // We need just up to maxResults results, not more.
         for (int i = 0; i < maxResults; i++)
         {
             var result = results[i];
-            Console.WriteLine($"{blue}Title:{reset} {result.Title}");
-            Console.WriteLine($"- {purple}URL:{reset} {result.URL}");
-            Console.WriteLine($"- {green}Snippet:{reset} {AbbreviateSnippet(result.Snippet)}");
+
+            Console.WriteLine($"- {blue}**{result.Title}**:{reset}");
+            Console.WriteLine($"  {purple}{result.Url}{reset}");
+            if (!string.IsNullOrEmpty(result.Date))
+            {
+                Console.WriteLine($"  {yellow}Date:{reset} {result.Date.Trim()}");
+            }
+            Console.WriteLine($"  {green}{AbbreviateSnippet(result.Snippet)}{reset}");
             Console.WriteLine();
         }
     }
