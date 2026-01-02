@@ -43,19 +43,6 @@ class Program
     static Program()
     {
         HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd(BrowserAgent);
-        HttpClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        HttpClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.5");
-        HttpClient.DefaultRequestHeaders.Add("Referer", "https://html.duckduckgo.com/ ");
-        HttpClient.DefaultRequestHeaders.Add("Origin", "https://html.duckduckgo.com ");
-        HttpClient.DefaultRequestHeaders.Add("DNT", "1");
-        HttpClient.DefaultRequestHeaders.Add("Connection", "keep-alive");
-        HttpClient.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
-        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
-        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
-        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
-        HttpClient.DefaultRequestHeaders.Add("Sec-Fetch-User", "?1");
-        HttpClient.DefaultRequestHeaders.Add("Priority", "u=0, i");
-        HttpClient.DefaultRequestHeaders.Add("TE", "trailers");
     }
 
     static async Task<int> Main(string[] args)
@@ -64,7 +51,7 @@ class Program
             .WriteTo.Console()
             .CreateLogger();
 
-        // Define command-line options.
+        // Command-line options
         var rootCommand = new RootCommand("Search for things on DuckDuckGo");
         var searchTermOption = new Option<string>(["--term", "-t"], "The query to search for");
         var resultNumberOption = new Option<int>(["--results", "-r", "-res"], () => 10, "Maximum number of results");
@@ -82,12 +69,12 @@ class Program
         rootCommand.AddOption(subtopicOption);
         rootCommand.AddOption(linksOnlyOption);
 
-        // Initialize a default config.
+        // Initialize a default config
         var config = new BrowserConfig();
 
         rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive, linksOnly) =>
         {
-            // If a config file is provided, load and parse it.
+            // If a config file is provided, load and parse it
             if (!string.IsNullOrWhiteSpace(configPath))
             {
                 try
@@ -101,7 +88,7 @@ class Program
                 }
             }
 
-            // Enable interactive mode if set in config or via command-line.
+            // Enable interactive mode if set in config or via command-line
             if (config.Repl || interactive)
             {
                 await RunInteractiveMode(config, maxResults, query, cliSubtopics, linksOnly);
@@ -122,7 +109,7 @@ class Program
     }
 
     /// <summary>
-    /// REPL loop: repeatedly prompt the user for queries until "exit" is typed.
+    /// REPL loop: repeatedly prompt the user for queries until "exit" is typed
     /// </summary>
     private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics, bool linksOnly)
     {
@@ -147,14 +134,14 @@ class Program
     /// </summary>
     private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics, bool linksOnly)
     {
-        // Command-line subtopics take precedence over config ones.
+        // Command-line subtopics take precedence over config ones
         var subtopics = cliSubtopics is { Length: > 0 }
             ? cliSubtopics.ToList()
             : config.Subtopics;
 
         Log.Information("Performing search for query: {Query}", query);
 
-        // Base search.
+        // Base search
         var baseResults = await SafeSearch(query);
         if (config.Sites.Count > 0)
         {
@@ -162,7 +149,7 @@ class Program
         }
         PrintResults(baseResults, maxResults, linksOnly);
 
-        // If subtopics exist, run a refined search for each.
+        // If subtopics exist, run a refined search for each
         if (subtopics.Count > 0)
         {
             foreach (var sub in subtopics)
@@ -439,6 +426,7 @@ class Program
         const string reset = "\u001b[0m";
         const string blue = "\u001b[34m";
         const string purple = "\u001b[35m";
+        const string bold = "\u001b[1m";
 
         Console.WriteLine($"{cyanBold}Search results{reset}\n");
 
@@ -459,7 +447,7 @@ class Program
         {
             var result = results[i];
 
-            Console.WriteLine($"- {blue}**{result.Title}**:{reset}");
+            Console.WriteLine($"- {blue}{bold}{result.Title}{reset}:");
             Console.WriteLine($"  {purple}{result.Url}{reset}");
             if (!string.IsNullOrEmpty(result.Date))
             {
