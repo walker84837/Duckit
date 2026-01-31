@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Globalization;
 using HtmlAgilityPack;
 using Serilog;
 
@@ -39,6 +40,7 @@ public class DuckDuckGoEngine : ISearchEngine
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             var responseBody = await response.Content.ReadAsStringAsync(ct);
+            Console.WriteLine(responseBody);
 
             using var contentStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody));
             var results = ParseHtml(contentStream);
@@ -111,12 +113,25 @@ public class DuckDuckGoEngine : ISearchEngine
                     var dateText = dateNode.InnerText.Replace("&nbsp;", "").Trim();
                     if (!string.IsNullOrWhiteSpace(dateText))
                     {
-                        // TODO: Attempt to parse the date. The format in the HTML looks like RFC 3339, so
-                        // "2025-06-07T00:00:00.0000000", or just "2025-06-07" if the time part is omitted in some cases.
-                        // We can try to parse it as DateTime and then format it nicely, or just keep the string. For
-                        // now, let's just keep the string after cleaning it up.
-                        Console.WriteLine(dateText);
-                        result.Date = null;
+                        // Try to parse the date. DuckDuckGo uses ISO 8601 format like "2024-12-29T14:18:00.0000000"
+                        // or just "2024-12-07" if the time part is omitted
+                        string[] formats = {
+                            "yyyy-MM-ddTHH:mm:ss.fffffff",  // Full format with 7-digit fractional seconds
+                            "yyyy-MM-ddTHH:mm:ss.fffffffK", // With timezone designator
+                            "yyyy-MM-ddTHH:mm:ss",          // Without fractional seconds
+                            "yyyy-MM-ddTHH:mm:ssK",         // Without fractional seconds, with timezone
+                            "yyyy-MM-dd"                    // Date only
+                        };
+
+                        if (DateTime.TryParseExact(dateText, formats, null, DateTimeStyles.None, out var parsedDate))
+                        {
+                            result.Date = parsedDate;
+                        }
+                        else
+                        {
+                            Log.Warning("Failed to parse date string: {DateText}", dateText);
+                            result.Date = null;
+                        }
                     }
                 }
 

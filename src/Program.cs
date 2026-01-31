@@ -313,9 +313,9 @@ class Program
 
             Console.WriteLine($"- {blue}{bold}{result.Title}{reset}:");
             Console.WriteLine($"  {purple}{result.Url}{reset}");
-            if (!string.IsNullOrEmpty(result.Date))
+            if (result.Date.HasValue)
             {
-                Console.WriteLine($"  {yellow}Date:{reset} {result.Date.Trim()}");
+                Console.WriteLine($"  {yellow}Date:{reset} {result.Date.Value:ddd MMM dd HH:mm:ss yyyy}");
             }
             Console.WriteLine($"  {green}{AbbreviateSnippet(result.Snippet)}{reset}");
             Console.WriteLine();

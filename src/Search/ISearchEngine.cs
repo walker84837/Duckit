@@ -3,7 +3,7 @@ namespace Duckit.Search;
 /// <summary>
 /// Search result obtained by the search engine.
 /// </summary>
-public struct Result
+public class Result
 {
     /// <summary>
     /// The title of the search result.
@@ -24,7 +24,20 @@ public struct Result
     /// <summary>
     /// The date associated with the search result.
     /// </summary>
-    public string? Date { get; set; }
+    public DateTime? Date { get; set; }
+
+    public Result()
+    {
+    }
+
+    public Result(string title, string url, string? displayUrl, string? snippet, DateTime? date)
+    {
+        Title = title;
+        Url = url;
+        DisplayUrl = displayUrl;
+        Snippet = snippet;
+        Date = date;
+    }
 }
 
 public interface ISearchEngine
