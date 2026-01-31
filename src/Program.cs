@@ -20,7 +20,6 @@ public class BrowserConfig
 
 class Program
 {
-    
     private const string BrowserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
     private const int MaxDescriptionLength = 20;
     private static readonly string[] ExitKeywords = ["exit", "quit", "q", "bye"];
@@ -134,7 +133,7 @@ class Program
             "duckduckgo" => new DuckDuckGoEngine(HttpClient),
             _ => throw new NotImplementedException()
         };
-        
+
         // Base search
         var baseResults = await engine.SearchAsync(query, _cancellationToken);
         if (config.Sites.Count > 0)

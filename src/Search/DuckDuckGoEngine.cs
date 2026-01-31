@@ -14,7 +14,7 @@ public class DuckDuckGoEngine : ISearchEngine
     {
         _httpClient = new();
     }
-    
+
     public DuckDuckGoEngine(HttpClient client)
     {
         _httpClient = client;
@@ -22,7 +22,7 @@ public class DuckDuckGoEngine : ISearchEngine
 
     public Task<List<Result>> SearchAsync(string query, CancellationToken ct)
         => SafeSearch(query);
-    
+
     /// <summary>
     /// Performs a POST request to DuckDuckGo's HTML endpoint.
     /// </summary>
@@ -60,7 +60,7 @@ public class DuckDuckGoEngine : ISearchEngine
             throw;
         }
     }
-    
+
     /// <summary>
     /// Parse the HTML content to extract search results.
     /// </summary>
@@ -138,8 +138,8 @@ public class DuckDuckGoEngine : ISearchEngine
         }
         return results;
     }
-    
-    
+
+
     /// <summary>
     /// Wraps the search call in simple error handling: if an exception is thrown, it's logged as an error and returns an empty list.
     /// </summary>
