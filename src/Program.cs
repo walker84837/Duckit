@@ -26,15 +26,15 @@ public class Result
 /// </summary>
 public class BrowserConfig
 {
-    public List<string> Sites { get; set; } = new List<string>();
-    public bool Repl { get; set; } = false;
+    public List<string> Sites { get; set; } = [];
+    public bool Repl { get; set; }
     public string SearchEngine { get; set; } = "duckduckgo";
-    public List<string> Subtopics { get; set; } = new List<string>();
+    public List<string> Subtopics { get; set; } = [];
 }
 
 class Program
 {
-    private const string DdgHtmlUrl = "https://html.duckduckgo.com/html/ ";
+    private const string DdgHtmlUrl = "https://html.duckduckgo.com/html/";
     private const string BrowserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
     private const int MaxDescriptionLength = 20;
     private static readonly string[] ExitKeywords = ["exit", "quit", "q", "bye"];
@@ -221,7 +221,7 @@ class Program
 
         if (browserTable.ContainsKey("search_engine"))
         {
-            config.SearchEngine = browserTable["search_engine"].ToString();
+            config.SearchEngine = browserTable["search_engine"].ToString() ?? string.Empty;
             if (!config.SearchEngine.Equals("duckduckgo", StringComparison.OrdinalIgnoreCase))
             {
                 Log.Warning("Warning: Search engine {SearchEngine} not implemented. Defaulting to DuckDuckGo.", config.SearchEngine);
@@ -251,8 +251,8 @@ class Program
         }
         catch (Exception ex)
         {
-            Log.Error($"Error while searching for \"{query}\": {ex.Message}");
-            return new List<Result>();
+            Log.Error("Error while searching for \"{Query}\": {ExMessage}", query, ex.Message);
+            return [];
         }
     }
 
@@ -413,7 +413,7 @@ class Program
         }
         else
         {
-            PrintLinksAsJSON(results);
+            PrintLinksAsJson(results);
         }
     }
 
@@ -458,7 +458,7 @@ class Program
         }
     }
 
-    private static void PrintLinksAsJSON(List<Result> results)
+    private static void PrintLinksAsJson(List<Result> results)
     {
         Console.WriteLine(JsonSerializer.Serialize(results));
     }
