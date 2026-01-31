@@ -140,6 +140,7 @@ class Program
         {
             baseResults = FilterResultsBySites(baseResults, config.Sites);
         }
+
         PrintResults(baseResults, maxResults, linksOnly);
 
         // If subtopics exist, run a refined search for each

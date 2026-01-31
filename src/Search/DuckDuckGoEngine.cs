@@ -10,18 +10,12 @@ public class DuckDuckGoEngine : ISearchEngine
     private const string DdgHtmlUrl = "https://html.duckduckgo.com/html/";
     private HttpClient _httpClient;
 
-    public DuckDuckGoEngine()
-    {
-        _httpClient = new();
-    }
-
     public DuckDuckGoEngine(HttpClient client)
     {
         _httpClient = client;
     }
 
-    public Task<List<Result>> SearchAsync(string query, CancellationToken ct)
-        => SafeSearch(query);
+    public Task<List<Result>> SearchAsync(string query, CancellationToken ct) => SafeSearch(query);
 
     /// <summary>
     /// Performs a POST request to DuckDuckGo's HTML endpoint.
