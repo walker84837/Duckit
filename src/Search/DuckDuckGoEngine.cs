@@ -8,19 +8,16 @@ namespace Duckit.Search;
 public class DuckDuckGoEngine : ISearchEngine
 {
     private const string DdgHtmlUrl = "https://html.duckduckgo.com/html/";
-    private HttpClient _httpClient;
+    private readonly HttpClient _httpClient;
 
-    public DuckDuckGoEngine(HttpClient client)
-    {
-        _httpClient = client;
-    }
+    public DuckDuckGoEngine(HttpClient client) => _httpClient = client;
 
-    public Task<List<Result>> SearchAsync(string query, CancellationToken ct) => SafeSearch(query);
+    public Task<List<Result>> SearchAsync(string query, CancellationToken ct) => SafeSearch(query, ct);
 
     /// <summary>
     /// Performs a POST request to DuckDuckGo's HTML endpoint.
     /// </summary>
-    private async Task<List<Result>> SearchDdg(string query)
+    private async Task<List<Result>> SearchDdg(string query, CancellationToken ct)
     {
         var formData = new Dictionary<string, string>
         {
@@ -35,13 +32,13 @@ public class DuckDuckGoEngine : ISearchEngine
 
         try
         {
-            var response = await _httpClient.PostAsync(DdgHtmlUrl, content);
+            var response = await _httpClient.PostAsync(DdgHtmlUrl, content, ct);
             Log.Information("Received response: {StatusCode} {ReasonPhrase}", (int)response.StatusCode, response.ReasonPhrase);
 
             if (!response.IsSuccessStatusCode)
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
-            var responseBody = await response.Content.ReadAsStringAsync();
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
 
             using var contentStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody));
             var results = ParseHtml(contentStream);
@@ -118,7 +115,8 @@ public class DuckDuckGoEngine : ISearchEngine
                         // "2025-06-07T00:00:00.0000000", or just "2025-06-07" if the time part is omitted in some cases.
                         // We can try to parse it as DateTime and then format it nicely, or just keep the string. For
                         // now, let's just keep the string after cleaning it up.
-                        result.Date = dateText;
+                        Console.WriteLine(dateText);
+                        result.Date = null;
                     }
                 }
 
@@ -137,11 +135,11 @@ public class DuckDuckGoEngine : ISearchEngine
     /// <summary>
     /// Wraps the search call in simple error handling: if an exception is thrown, it's logged as an error and returns an empty list.
     /// </summary>
-    private async Task<List<Result>> SafeSearch(string query)
+    private async Task<List<Result>> SafeSearch(string query, CancellationToken ct)
     {
         try
         {
-            return await SearchDdg(query);
+            return await SearchDdg(query, ct);
         }
         catch (Exception ex)
         {
