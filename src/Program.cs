@@ -24,7 +24,7 @@ class Program
     private const int MaxDescriptionLength = 20;
     private static readonly string[] ExitKeywords = ["exit", "quit", "q", "bye"];
     private static readonly HttpClient HttpClient = new();
-    private static CancellationToken _cancellationToken;
+    private static readonly CancellationToken _cancellationToken;
 
     static Program()
     {
@@ -43,6 +43,7 @@ class Program
         var searchTermOption = new Option<string>(["--term", "-t"], "The query to search for");
         var resultNumberOption = new Option<int>(["--results", "-r", "-res"], () => 10, "Maximum number of results");
         var linksOnlyOption = new Option<bool>(["--links-only", "-l"], "Output only URLs of the search results.");
+        var jsonOption = new Option<bool>(["-j", "--json"], "Provide a JSON-formatted list of the search results.");
 
         // Command-line subtopic option (can override config subtopics)
         var subtopicOption = new Option<string[]>(["--subtopic", "-s", "-sub"], "Subtopics to refine the search");
@@ -55,11 +56,12 @@ class Program
         rootCommand.AddOption(interactiveOption);
         rootCommand.AddOption(subtopicOption);
         rootCommand.AddOption(linksOnlyOption);
+        rootCommand.AddOption(jsonOption);
 
         // Initialize a default config
         var config = new BrowserConfig();
 
-        rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive, linksOnly) =>
+        rootCommand.SetHandler(async (query, configPath, maxResults, cliSubtopics, interactive, linksOnly, json) =>
         {
             // If a config file is provided, load and parse it
             if (!string.IsNullOrWhiteSpace(configPath))
@@ -78,7 +80,7 @@ class Program
             // Enable interactive mode if set in config or via command-line
             if (config.Repl || interactive)
             {
-                await RunInteractiveMode(config, maxResults, query, cliSubtopics, linksOnly);
+                await RunInteractiveMode(config, maxResults, query, cliSubtopics, linksOnly, json);
             }
             else
             {
@@ -87,10 +89,10 @@ class Program
                     Log.Warning("No search query entered.");
                     return;
                 }
-                await ProcessQuery(query, config, maxResults, cliSubtopics, linksOnly);
+                await ProcessQuery(query, config, maxResults, cliSubtopics, linksOnly, json);
             }
         },
-        searchTermOption, configOption, resultNumberOption, subtopicOption, interactiveOption, linksOnlyOption);
+        searchTermOption, configOption, resultNumberOption, subtopicOption, interactiveOption, linksOnlyOption, jsonOption);
 
         return await rootCommand.InvokeAsync(args);
     }
@@ -98,12 +100,12 @@ class Program
     /// <summary>
     /// REPL loop: repeatedly prompt the user for queries until "exit" is typed
     /// </summary>
-    private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics, bool linksOnly)
+    private static async Task RunInteractiveMode(BrowserConfig config, int maxResults, string? initialQuery, string[]? cliSubtopics, bool linksOnly, bool json)
     {
         Console.WriteLine("Entering interactive mode. Type 'exit' to quit.");
         if (!string.IsNullOrWhiteSpace(initialQuery))
         {
-            await ProcessQuery(initialQuery, config, maxResults, cliSubtopics, linksOnly);
+            await ProcessQuery(initialQuery, config, maxResults, cliSubtopics, linksOnly, json);
         }
         while (true)
         {
@@ -112,14 +114,14 @@ class Program
             {
                 break;
             }
-            await ProcessQuery(input, config, maxResults, cliSubtopics, linksOnly);
+            await ProcessQuery(input, config, maxResults, cliSubtopics, linksOnly, json);
         }
     }
 
     /// <summary>
     /// Processes a query: performs a base search then, if subtopics are provided, additional refined searches.
     /// </summary>
-    private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics, bool linksOnly)
+    private static async Task ProcessQuery(string query, BrowserConfig config, int maxResults, string[]? cliSubtopics, bool linksOnly, bool json)
     {
         // Command-line subtopics take precedence over config ones
         var subtopics = cliSubtopics is { Length: > 0 }
@@ -141,7 +143,7 @@ class Program
             baseResults = FilterResultsBySites(baseResults, config.Sites);
         }
 
-        PrintResults(baseResults, maxResults, linksOnly);
+        PrintResults(baseResults, maxResults, linksOnly, json);
 
         // If subtopics exist, run a refined search for each
         if (subtopics.Count > 0)
@@ -156,7 +158,7 @@ class Program
                 {
                     subResults = FilterResultsBySites(subResults, config.Sites);
                 }
-                PrintResults(subResults, maxResults, linksOnly);
+                PrintResults(subResults, maxResults, linksOnly, json);
             }
         }
     }
@@ -256,10 +258,16 @@ class Program
     /// <summary>
     /// Displays results either as fancy, colorized output or plain output for redirection.
     /// If linksOnly is true, only the URLs are output.
+    /// If json is true, outputs JSON-formatted results.
     /// </summary>
-    private static void PrintResults(List<Result> results, int maxResults, bool linksOnly)
+    private static void PrintResults(List<Result> results, int maxResults, bool linksOnly, bool json)
     {
-        var isRedirected = Console.IsOutputRedirected;
+        if (json)
+        {
+            PrintLinksAsJson(results.Take(maxResults).ToList());
+            return;
+        }
+
         if (linksOnly)
         {
             // Print only URLs
@@ -270,6 +278,7 @@ class Program
             return;
         }
 
+        var isRedirected = Console.IsOutputRedirected;
         if (!isRedirected)
         {
             PrintFormattedLinks(results, maxResults);
@@ -283,14 +292,16 @@ class Program
     private static void PrintFormattedLinks(List<Result> results, int maxResults)
     {
         // TODO: C# has stdlib classes for this. Maybe consider using them.
+        // A future addition could also let the user configure themes using a newline-separated palette
+        // You could use such feature for wallust and prebuilt themes (catpuccin, hybrid, etc)
         const string cyanBold = "\e[1;36m";
-        const string green = "\u001b[32m";
-        const string red = "\u001b[31m";
-        const string yellow = "\u001b[33m";
-        const string reset = "\u001b[0m";
-        const string blue = "\u001b[34m";
-        const string purple = "\u001b[35m";
-        const string bold = "\u001b[1m";
+        const string green = "\e[32m";
+        const string red = "\e[31m";
+        const string yellow = "\e[33m";
+        const string reset = "\e[0m";
+        const string blue = "\e[34m";
+        const string purple = "\e[35m";
+        const string bold = "\e[1m";
 
         Console.WriteLine($"{cyanBold}Search results{reset}\n");
 

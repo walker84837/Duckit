@@ -40,7 +40,6 @@ public class DuckDuckGoEngine : ISearchEngine
                 throw new Exception($"Bad response: {(int)response.StatusCode} {response.ReasonPhrase}");
 
             var responseBody = await response.Content.ReadAsStringAsync(ct);
-            Console.WriteLine(responseBody);
 
             using var contentStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody));
             var results = ParseHtml(contentStream);
