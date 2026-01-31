@@ -41,6 +41,8 @@ public class DuckDuckGoEngine : ISearchEngine
 
             var responseBody = await response.Content.ReadAsStringAsync(ct);
 
+            await SaveHtmlIfRequestedAsync(responseBody);
+
             using var contentStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody));
             var results = ParseHtml(contentStream);
             Log.Information("Successfully parsed HTML response");
@@ -114,13 +116,14 @@ public class DuckDuckGoEngine : ISearchEngine
                     {
                         // Try to parse the date. DuckDuckGo uses ISO 8601 format like "2024-12-29T14:18:00.0000000"
                         // or just "2024-12-07" if the time part is omitted
-                        string[] formats = {
+                        string[] formats =
+                        [
                             "yyyy-MM-ddTHH:mm:ss.fffffff",  // Full format with 7-digit fractional seconds
                             "yyyy-MM-ddTHH:mm:ss.fffffffK", // With timezone designator
                             "yyyy-MM-ddTHH:mm:ss",          // Without fractional seconds
                             "yyyy-MM-ddTHH:mm:ssK",         // Without fractional seconds, with timezone
                             "yyyy-MM-dd"                    // Date only
-                        };
+                        ];
 
                         if (DateTime.TryParseExact(dateText, formats, null, DateTimeStyles.None, out var parsedDate))
                         {
@@ -159,6 +162,35 @@ public class DuckDuckGoEngine : ISearchEngine
         {
             Log.Error("Error while searching for \"{Query}\": {ExMessage}", query, ex.Message);
             return [];
+        }
+    }
+
+    private async Task SaveHtmlIfRequestedAsync(string html)
+    {
+        var env = Environment.GetEnvironmentVariable("SHOW_HTML");
+        if (string.IsNullOrWhiteSpace(env))
+        {
+            // No valid environment variable
+            return;
+        }
+
+        // 1. parse string as boolean (true or false)
+        if (bool.TryParse(env, out var result))
+        {
+            if (result)
+                Console.WriteLine(html);
+
+            return;
+        }
+
+        // 2. actually write to the file and log message
+        try
+        {
+            await File.WriteAllTextAsync(env, html, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "SHOW_HTML environment variable requests HTML to be written to {Path}, but failed", env);
         }
     }
 }
