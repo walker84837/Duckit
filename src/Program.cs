@@ -16,20 +16,28 @@ public class BrowserConfig
     public bool Repl { get; set; }
     public string SearchEngine { get; set; } = "duckduckgo";
     public List<string> Subtopics { get; set; } = [];
+    public string UserAgent { get; set; } = "";
 }
 
 class Program
 {
-    private const string BrowserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
+    private const string DefaultBrowserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
     private const int MaxDescriptionLength = 20;
     private static readonly string[] ExitKeywords = ["exit", "quit", "q", "bye"];
     private static readonly HttpClient HttpClient = new();
     private static readonly CancellationToken _cancellationToken;
 
+    private static readonly Dictionary<string, string> UserAgentPresets = new()
+    {
+        { "firefox", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0" },
+        { "chrome", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" },
+        { "safari", "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15" }
+    };
+
     static Program()
     {
         _cancellationToken = new CancellationTokenSource().Token;
-        HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd(BrowserAgent);
+        HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd(DefaultBrowserAgent);
     }
 
     static async Task<int> Main(string[] args)
@@ -76,6 +84,18 @@ class Program
                     Log.Error("Failed to load config: {Message}", ex.Message);
                 }
             }
+
+            var userAgentConfig = UserAgentPresets.TryGetValue(config.UserAgent.ToLower(), out var preset)
+                ? preset
+                : config.UserAgent;
+
+            // Apply user agent from config or use default
+            var userAgentToUse = string.IsNullOrEmpty(config.UserAgent)
+                ? DefaultBrowserAgent
+                : userAgentConfig;
+
+            HttpClient.DefaultRequestHeaders.UserAgent.Clear();
+            HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd(userAgentToUse);
 
             // Enable interactive mode if set in config or via command-line
             if (config.Repl || interactive)
@@ -232,6 +252,11 @@ class Program
             {
                 config.Subtopics.Add(sub.ToString());
             }
+        }
+
+        if (browserTable.ContainsKey("user_agent"))
+        {
+            config.UserAgent = browserTable["user_agent"].ToString() ?? string.Empty;
         }
 
         return config;
