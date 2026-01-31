@@ -4,7 +4,7 @@
 
 ![duckit](https://github.com/user-attachments/assets/27f0b632-27ef-457f-bf58-bad6596de3c3)
 
-Duckit is a simple search tool that queries DuckDuckGo Lite (or other supported engines in the future) for results based on user-defined search terms. It allows filtering results by specific websites, refining searches with subtopics, and supports interactive and JSON-formatted outputs. The configuration can be loaded from a TOML file, or defaults will be used if no file is provided.
+Duckit is a simple search tool that queries DuckDuckGo Lite (or other supported engines in the future) for results based on user-defined search terms.
 
 > [!IMPORTANT]
 > Duckit may not always work as expected. DuckDuckGo can sometimes ask you to solve a CAPTCHA, even if your traffic appears "legitimate" (non-bot).
@@ -13,9 +13,10 @@ Duckit is a simple search tool that queries DuckDuckGo Lite (or other supported 
 
 ## Features
 
-- Load configuration from a TOML file.
-- Specify valid websites to filter search results.
+- Load configuration from a TOML file with defaults if not provided.
+- Filter results by specific websites.
 - Set a maximum number of results to display.
+- Supports interactive mode to search for more terms without rerunning Duckit.
 - Refine searches with subtopics.
 - Interactive mode for repeatedly prompting the user for queries.
 - JSON-formatted output for easier programmatic consumption.
