@@ -2,7 +2,7 @@
 
 ## Overview
 
-![duckit](https://github.com/user-attachments/assets/27f0b632-27ef-457f-bf58-bad6596de3c3)
+[![duckit](https://asciinema.org/a/qWr0baFZZgwKOP0E.svg)](https://asciinema.org/a/qWr0baFZZgwKOP0E)
 
 Duckit is a simple search tool that queries DuckDuckGo Lite (or other supported engines in the future) for results based on user-defined search terms.
 
