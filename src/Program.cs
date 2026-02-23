@@ -42,6 +42,11 @@ class Program
 
     static async Task<int> Main(string[] args)
     {
+        if (args.Length == 0)
+        {
+            Console.WriteLine("No arguments provided. Please try again, using `--help` for program's usage.");
+        }
+
         Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
             .CreateLogger();
@@ -346,8 +351,9 @@ class Program
         for (int i = 0; i < maxResults; i++)
         {
             var result = results[i];
+            var typeIndicator = result.ResultType != "web" ? $" ({result.ResultType})" : "";
 
-            Console.WriteLine($"- {blue}{bold}{result.Title}{reset}:");
+            Console.WriteLine($"- {blue}{bold}{result.Title}{reset}{typeIndicator}:");
             Console.WriteLine($"  {purple}{result.Url}{reset}");
             if (result.Date.HasValue)
             {

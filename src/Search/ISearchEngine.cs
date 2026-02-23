@@ -10,7 +10,7 @@ public class Result
     /// </summary>
     public string? Title { get; set; }
     /// <summary>
-    /// The URL of the search result.
+    /// The URL of the search result (may contain tracking parameters).
     /// </summary>
     public string? Url { get; set; }
     /// <summary>
@@ -25,6 +25,14 @@ public class Result
     /// The date associated with the search result.
     /// </summary>
     public DateTime? Date { get; set; }
+    /// <summary>
+    /// The type of search result (web, news, image, video, ad).
+    /// </summary>
+    public string? ResultType { get; set; }
+    /// <summary>
+    /// URL of the favicon for this result.
+    /// </summary>
+    public string? FaviconUrl { get; set; }
 
     public Result()
     {

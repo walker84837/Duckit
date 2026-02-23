@@ -15,9 +15,6 @@ public class DuckDuckGoEngine : ISearchEngine
 
     public Task<List<Result>> SearchAsync(string query, CancellationToken ct) => SafeSearch(query, ct);
 
-    /// <summary>
-    /// Performs a POST request to DuckDuckGo's HTML endpoint.
-    /// </summary>
     private async Task<List<Result>> SearchDdg(string query, CancellationToken ct)
     {
         var formData = new Dictionary<string, string>
@@ -55,9 +52,6 @@ public class DuckDuckGoEngine : ISearchEngine
         }
     }
 
-    /// <summary>
-    /// Parse the HTML content to extract search results.
-    /// </summary>
     private static List<Result> ParseHtml(Stream htmlStream)
     {
         List<Result> results = [];
@@ -66,7 +60,6 @@ public class DuckDuckGoEngine : ISearchEngine
             var doc = new HtmlDocument();
             doc.Load(htmlStream);
 
-            // Select nodes that represent search results
             var nodes = doc.DocumentNode.SelectNodes("//div[contains(@class, 'links_main') and contains(@class, 'result__body')]");
             if (nodes == null)
             {
@@ -78,7 +71,8 @@ public class DuckDuckGoEngine : ISearchEngine
             {
                 var result = new Result();
 
-                // Extract the title from an <h2> element
+                result.ResultType = GetResultType(node);
+
                 var h2Node = node.SelectSingleNode(".//h2[contains(@class, 'result__title')]");
                 if (h2Node != null)
                 {
@@ -87,7 +81,6 @@ public class DuckDuckGoEngine : ISearchEngine
                         result.Title = WebUtility.HtmlDecode(titleLink.InnerText.Trim());
                 }
 
-                // Extract URL, DisplayUrl, and snippet.
                 var urlLink = node.SelectSingleNode(".//a[contains(@class, 'result__a')]");
                 if (urlLink != null)
                 {
@@ -106,23 +99,21 @@ public class DuckDuckGoEngine : ISearchEngine
                     result.Snippet = WebUtility.HtmlDecode(snippetNode.InnerText.Trim());
                 }
 
-                // Extract Date if available
+                result.FaviconUrl = ExtractFavicon(node);
+
                 var dateNode = node.SelectSingleNode(".//div[contains(@class, 'result__extras')]//span[not(contains(@class, 'result__icon')) and not(contains(@class, 'result__url'))]");
                 if (dateNode != null)
                 {
-                    // Clean up the date string (remove leading/trailing spaces and the HTML entity for space)
                     var dateText = dateNode.InnerText.Replace("&nbsp;", "").Trim();
                     if (!string.IsNullOrWhiteSpace(dateText))
                     {
-                        // Try to parse the date. DuckDuckGo uses ISO 8601 format like "2024-12-29T14:18:00.0000000"
-                        // or just "2024-12-07" if the time part is omitted
                         string[] formats =
                         [
-                            "yyyy-MM-ddTHH:mm:ss.fffffff",  // Full format with 7-digit fractional seconds
-                            "yyyy-MM-ddTHH:mm:ss.fffffffK", // With timezone designator
-                            "yyyy-MM-ddTHH:mm:ss",          // Without fractional seconds
-                            "yyyy-MM-ddTHH:mm:ssK",         // Without fractional seconds, with timezone
-                            "yyyy-MM-dd"                    // Date only
+                            "yyyy-MM-ddTHH:mm:ss.fffffff",
+                            "yyyy-MM-ddTHH:mm:ss.fffffffK",
+                            "yyyy-MM-ddTHH:mm:ss",
+                            "yyyy-MM-ddTHH:mm:ssK",
+                            "yyyy-MM-dd"
                         ];
 
                         if (DateTime.TryParseExact(dateText, formats, null, DateTimeStyles.None, out var parsedDate))
@@ -148,10 +139,35 @@ public class DuckDuckGoEngine : ISearchEngine
         return results;
     }
 
+    private static string? GetResultType(HtmlNode node)
+    {
+        var classAttr = node.GetAttributeValue("class", "");
+        if (string.IsNullOrEmpty(classAttr))
+            return "web";
 
-    /// <summary>
-    /// Wraps the search call in simple error handling: if an exception is thrown, it's logged as an error and returns an empty list.
-    /// </summary>
+        if (classAttr.Contains("news-result") || classAttr.Contains("result--news"))
+            return "news";
+        if (classAttr.Contains("image-result") || classAttr.Contains("result--images"))
+            return "image";
+        if (classAttr.Contains("video-result") || classAttr.Contains("result--videos"))
+            return "video";
+        if (classAttr.Contains("ad-result") || classAttr.Contains("result--ad"))
+            return "ad";
+
+        return "web";
+    }
+
+    private static string? ExtractFavicon(HtmlNode node)
+    {
+        var faviconNode = node.SelectSingleNode(".//img[contains(@class, 'result__icon__img')]");
+        if (faviconNode == null) return null;
+
+        var faviconUrl = faviconNode.GetAttributeValue("src", "")
+                         ?? faviconNode.GetAttributeValue("data-src", "");
+
+        return string.IsNullOrEmpty(faviconUrl) ? null : faviconUrl;
+    }
+
     private async Task<List<Result>> SafeSearch(string query, CancellationToken ct)
     {
         try
@@ -169,21 +185,15 @@ public class DuckDuckGoEngine : ISearchEngine
     {
         var env = Environment.GetEnvironmentVariable("SHOW_HTML");
         if (string.IsNullOrWhiteSpace(env))
-        {
-            // No valid environment variable
             return;
-        }
 
-        // 1. parse string as boolean (true or false)
         if (bool.TryParse(env, out var result))
         {
             if (result)
                 Console.WriteLine(html);
-
             return;
         }
 
-        // 2. actually write to the file and log message
         try
         {
             await File.WriteAllTextAsync(env, html, Encoding.UTF8);
